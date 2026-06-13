@@ -38,23 +38,49 @@ const NAMES = [
 ];
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+// Phase-aware chat templates: opener (start), early (0-3 msgs), mid (4-11), late (12+)
 const CHAT_TEMPLATES = {
   'Easy Deal': {
     opener: [
       'Halo, saya tertarik dengan produknya!',
       'Hai kak, mau lihat-lihat dulu ya 😊',
       'Selamat siang, langsung ke produk unggulannya aja',
+      'Pagi! Saya sudah lihat di website, mau cek langsung',
+      'Hai, teman saya rekomendasiin produk di sini',
+      'Sore, saya tertarik dengan promo yang kemarin',
+      'Halo, lagi nyari yang spesifikasinya seperti ini',
     ],
-    reply: [
-      'Oke siap, lanjut!',
-      'Wah menarik nih',
-      'Setuju, bisa langsung diproses',
-      'Mantap, saya ambil yang itu',
-      'Oke, bagaimana cara bayarnya?',
-      'Sip, saya percaya rekomendasinya',
-      'Boleh, langsung checkout aja deh',
-      'Asik, kapan barangnya sampai?',
-      'Oke fix saya order sekarang',
+    early: [
+      'Wah menarik, ceritakan lebih detail dong',
+      'Oke saya simak ya, lanjut',
+      'Sip, kebetulan saya lagi cari yang seperti itu',
+      'Oh begitu, ada fitur unggulannya apa aja?',
+      'Lanjut kak, saya pendengar yang baik kok 😄',
+      'Berapa harganya kak?',
+      'Boleh saya foto-foto produknya?',
+      'Stok-nya banyak gak ya?',
+    ],
+    mid: [
+      'Hmm bagus juga ya, sesuai kebutuhan saya',
+      'Saya setuju, masuk akal harga segitu',
+      'Oke saya udah cukup paham, mantap',
+      'Wah saya makin yakin nih',
+      'Sip, kayanya cocok buat saya',
+      'Ada warna lain gak? Yang ini bagus tapi',
+      'Garansinya tetap penuh kan ya?',
+      'Bisa diantar minggu ini gak ke alamat saya?',
+      'Cara perawatannya gampang kan?',
+    ],
+    late: [
+      'Oke fix, saya ambil yang ini 🎉',
+      'Mantap, langsung proses aja kak',
+      'Sip, bagaimana cara bayarnya?',
+      'Bisa transfer atau pakai kartu kredit?',
+      'Saya checkout sekarang ya',
+      'Boleh tolong siapin invoice-nya?',
+      'Asik, kapan barangnya sampai ya?',
+      'Setuju, terima kasih banyak penjelasannya 🙏',
+      'Saya udah ready, tinggal final amount aja',
     ],
   },
   'Negotiator': {
@@ -62,18 +88,41 @@ const CHAT_TEMPLATES = {
       'Bisa kasih diskon nggak nih? 💸',
       'Harga di tempat lain lebih murah lho kak',
       'Kalau saya ambil 2, dapat potongan berapa?',
+      'Wah mahal banget, ada promo gak?',
+      'Saya member lama, biasanya dapat harga spesial',
+      'Pertama kali ke sini, ada diskon welcome gak?',
+      'Eh kak, harga net-nya berapa beneran?',
     ],
-    reply: [
+    early: [
+      'Berapa harga net-nya kak, jangan harga display ya',
+      'Tetangga sebelah kasih diskon 15% lho 😏',
+      'Kalau cash gimana harganya?',
+      'Saya udah survey ke 3 toko, di sini paling mahal',
+      'Bonus apa yang bisa saya dapat?',
+      'Free ongkir gak ada minimumnya?',
+      'Voucher diskon platform bisa dipakai juga?',
+      'Buat repeat customer ada extra gak?',
+    ],
+    mid: [
       'Hmm masih kemahalan menurut saya',
-      'Bisa turun lagi nggak harganya?',
-      'Tambahin bonus dong biar deal',
-      'Coba saya pikir-pikir dulu deh',
-      'Kalau cash bisa diskon berapa?',
-      'Kompetitor kasih harga lebih murah lho',
-      'Bisa free ongkir gak minimal?',
-      'Voucher diskon ada? Saya member soalnya',
-      'Hmm, kalau segini gak deal saya',
-      'Oke deh, kalau dapat bonus saya ambil',
+      'Bisa turun lagi nggak harganya, sedikit aja',
+      'Tambahin bonus aksesoris dong biar deal',
+      'Kompetitor kasih cashback 10% nih, di sini gimana?',
+      'Kalau saya rekomendasiin ke teman, ada referral bonus?',
+      'Saya beli quantity banyak, harga grosir dong',
+      'Cicilan 0% berapa bulan max?',
+      'Bisa free aksesoris kalau saya deal sekarang?',
+      'Coba telpon supervisor, minta harga spesial dong',
+    ],
+    late: [
+      'Oke deh, kalau dapat bonus saya ambil 🤝',
+      'Final price-nya berapa kak, saya mau decide sekarang',
+      'Kalau gak bisa turun lagi, saya gak jadi nih',
+      'Hmm... oke saya pikir-pikir dulu deh',
+      'Bisa ya 10% lagi? Last offer dari saya',
+      'Yauda deal, tapi tolong cepetin ya processnya',
+      'Saya beneran udah mentok di angka ini, gimana?',
+      'Oke saya ambil, tapi besok harus sudah sampai ya',
     ],
   },
   'Many Questions': {
@@ -81,38 +130,99 @@ const CHAT_TEMPLATES = {
       'Spesifikasi lengkapnya apa aja ya? ❓',
       'Garansinya berapa lama kak?',
       'Bedanya sama produk sebelah apa?',
+      'Material/komposisinya apa ya?',
+      'Asalnya impor atau lokal nih?',
+      'Tahun produksinya berapa? Yang terbaru kan?',
+      'Boleh tau supplier resminya siapa?',
     ],
-    reply: [
-      'Oh gitu, terus warnanya ada apa aja?',
+    early: [
+      'Oh gitu, terus apa lagi keunggulannya?',
+      'Sertifikatnya resmi kan ya? BPOM/SNI/dll',
       'Tahan banting nggak ini?',
+      'Berapa lama umur pemakaiannya?',
+      'Cocok untuk pemula atau expert?',
+      'Aman dipakai sehari-hari kan?',
+      'Tahan air sampai berapa meter?',
+      'Energi listriknya berapa watt ya?',
+    ],
+    mid: [
       'Kalau rusak, service-nya di mana?',
-      'Sertifikatnya resmi kan ya?',
-      'Hmm pertanyaan lagi, sabar ya kak 😅',
-      'Baterainya tahan berapa jam?',
+      'Baterai/daya tahan berapa jam pemakaian?',
       'Bisa dipakai untuk anak-anak nggak?',
       'Komposisinya aman kan? Saya alergi soalnya',
-      'Lebih bagus seri lama atau baru?',
-      'Kalau ditukar bisa? Saya masih ragu',
+      'Lebih bagus seri lama atau yang baru?',
+      'Reviewnya kebanyakan positif gak di internet?',
+      'Apakah ada efek samping/risiko?',
+      'Performance-nya stabil dalam jangka panjang?',
+      'Sparepart-nya gampang dicari gak?',
+    ],
+    late: [
+      'Hmm masih ragu nih, masih ada pertanyaan 😅',
+      'Boleh saya bawa pulang dulu untuk dibanding-bandingkan?',
+      'Kalau ditukar dengan yang lain bisa?',
+      'Bisa free trial dulu seminggu?',
+      'Saya butuh konsultasi sama keluarga dulu',
+      'Sebenernya saya tertarik tapi kok masih banyak yang belum jelas ya',
+      'Boleh minta brosur lengkap aja deh dulu',
+      'Saya cek-cek lagi nanti, pamit dulu ya',
     ],
   },
 };
 
-const SALES_REPLIES = [
-  'Tentu kak, saya bantu jelaskan',
-  'Boleh saya cek dulu sebentar ya',
-  'Untuk produk ini ada penawaran spesial',
-  'Siap kak, sudah saya catat',
-  'Bisa kak, untuk Anda kami kasih harga terbaik',
-  'Kami punya promo bundling juga lho',
-  'Spesial hari ini ada cashback 10%',
-  'Garansi resmi 1 tahun penuh ya kak',
-  'Stock-nya tinggal sedikit, mumpung masih ada',
-  'Mau saya bantu siapkan invoice-nya?',
-  'Boleh saya tunjukkan produk yang lebih cocok?',
-  'Ada testimoni 4.8/5 dari customer kami lho',
-  'Kalau ambil sekarang free ongkir kak',
-  'Saya kasih bonus aksesoris ya kalau deal hari ini',
-];
+const SALES_LINES = {
+  early: [
+    'Tentu kak, dengan senang hati saya jelaskan',
+    'Selamat datang! Saya bantu sampai dapat yang pas',
+    'Produk ini paling laris bulan ini lho',
+    'Kebetulan kami baru launching seri terbaru',
+    'Saya kasih ringkasan dulu ya supaya hemat waktu Anda',
+    'Boleh saya tahu kebutuhan utamanya untuk apa kak?',
+    'Mau saya tunjukkan beberapa pilihan dulu?',
+    'Spesifikasinya saya lampirkan lengkap di brosur ini',
+  ],
+  mid: [
+    'Untuk produk ini ada penawaran spesial hari ini',
+    'Spesial kak, ada cashback 10% sampai akhir bulan',
+    'Garansi resmi 1 tahun penuh, bisa diperpanjang',
+    'Boleh saya tunjukkan testimoni customer kami?',
+    'Rating produk ini 4.8/5 dari 1200+ buyer',
+    'Stok-nya tinggal sedikit, mumpung masih ada warna favorit',
+    'Saya bisa kasih bonus aksesoris kalau deal hari ini',
+    'Bisa kak, untuk Anda kami kasih harga terbaik',
+    'Cicilan 0% sampai 12 bulan ada lho',
+    'Free ongkir Jabodetabek dan asuransi pengiriman',
+    'Kalau ragu, kami juga ada return policy 7 hari',
+    'Mau saya bandingin sama produk kompetitor secara fair?',
+  ],
+  late: [
+    'Mau saya bantu siapkan invoice-nya sekarang?',
+    'Saya proses ya kak, sebentar saya cek stock',
+    'Boleh konfirmasi alamat pengirimannya?',
+    'Bisa transfer bank, e-wallet, atau kartu kredit kak',
+    'Saya pegang stoknya 1 jam ya, kalau lewat saya lepas',
+    'Bagaimana kak? Saya tunggu keputusannya',
+    'Kalau deal hari ini bonus extra langsung saya kirim',
+    'Anyway terima kasih atas waktunya, semoga jadi rezeki',
+    'Bisa saya bantu apa lagi kak?',
+    'Boleh tinggalkan kontak, saya follow up minggu depan',
+    'Kapan-kapan boleh mampir lagi ya kak',
+  ],
+};
+
+// Pick context-aware line for sales/customer based on conversation phase
+function pickLine(from, customer, chatLength) {
+  let phase;
+  if (chatLength < 4) phase = 'early';
+  else if (chatLength < 12) phase = 'mid';
+  else phase = 'late';
+
+  if (from === 'sales') {
+    return pick(SALES_LINES[phase] || SALES_LINES.mid);
+  }
+  // customer
+  const tpl = CHAT_TEMPLATES[customer.mood] || CHAT_TEMPLATES['Easy Deal'];
+  return pick(tpl[phase] || tpl.mid || tpl.early || tpl.opener);
+}
 
 function makeCustomer({ name, type, mood }) {
   const t = type || (Math.random() < 0.4 ? 'premium' : 'normal');
@@ -394,17 +504,42 @@ function assignCustomerToSales(sales, customer) {
   return customer;
 }
 
-// Auto-assign: fill all sales up to MAX_LOAD using load-balancing (least busy first)
+// Compute current avg rating for a sales (default 3.5 if no reviews)
+function salesAvgRating(salesId) {
+  const served = store.customers.filter(c => c.servedBy === salesId && c.status === 'finished');
+  const ratings = served.map(c => c.rating).filter(r => r != null);
+  if (!ratings.length) return 3.5;
+  return ratings.reduce((a, b) => a + b, 0) / ratings.length;
+}
+
+// Smart auto-assign:
+// - Premium customer → sales with HIGHEST rating that has capacity (tie-break by lowest load)
+// - Normal customer  → sales with LOWEST rating that has capacity (tie-break by lowest load)
+// This routes high-value customers to best performers, balances workload on others.
 function tryAutoAssign() {
   const assignments = [];
   let next;
   while ((next = getQueue()[0])) {
     const available = store.sales
       .filter(s => (s.currentCustomerIds?.length || 0) < MAX_LOAD)
-      .sort((a, b) => (a.currentCustomerIds?.length || 0) - (b.currentCustomerIds?.length || 0));
+      .map(s => ({
+        s,
+        rating: salesAvgRating(s.id),
+        load: s.currentCustomerIds?.length || 0,
+      }));
     if (available.length === 0) break;
-    assignCustomerToSales(available[0], next);
-    assignments.push({ salesId: available[0].id, customerId: next.id });
+
+    if (next.type === 'premium') {
+      // Highest rating first, then least busy
+      available.sort((a, b) => (b.rating - a.rating) || (a.load - b.load));
+    } else {
+      // Lowest rating first (to give them practice on lower-stakes customers),
+      // then least busy
+      available.sort((a, b) => (a.rating - b.rating) || (a.load - b.load));
+    }
+    const chosen = available[0].s;
+    assignCustomerToSales(chosen, next);
+    assignments.push({ salesId: chosen.id, customerId: next.id, strategy: next.type });
   }
   return assignments;
 }
@@ -530,17 +665,15 @@ async function handle(request, { params }) {
       const advances = [];
       const concluded = [];
       for (const s of store.sales) {
-        const ids = [...(s.currentCustomerIds || [])]; // copy so mutation OK
+        const ids = [...(s.currentCustomerIds || [])];
         for (const cid of ids) {
           const customer = store.customers.find(c => c.id === cid);
           if (!customer || customer.status !== 'serving') continue;
           if (!customer.chat) customer.chat = [];
 
           const last = customer.chat[customer.chat.length - 1];
-          const lastFrom = last?.from;
-          const from = lastFrom === 'sales' ? 'customer' : 'sales';
-          const tpl = CHAT_TEMPLATES[customer.mood] || CHAT_TEMPLATES['Easy Deal'];
-          const text = from === 'sales' ? pick(SALES_REPLIES) : pick(tpl.reply);
+          const from = last?.from === 'sales' ? 'customer' : 'sales';
+          const text = pickLine(from, customer, customer.chat.length);
           const author = from === 'sales' ? s.name : customer.name;
           const now = Date.now();
           customer.chat.push({ id: now + Math.random(), from, author, text, ts: now });
@@ -556,7 +689,7 @@ async function handle(request, { params }) {
       return NextResponse.json({ ok: true, advances, concluded, snapshot: snapshot() });
     }
 
-    // CHAT: sales sends a message; customer auto-replies based on mood
+    // CHAT: sales sends a message; customer auto-replies based on mood+phase
     if (path === '/chat/send' && method === 'POST') {
       const { salesId, customerId, text } = body;
       const sales = store.sales.find(s => s.id === salesId);
@@ -570,11 +703,13 @@ async function handle(request, { params }) {
       if (!customer.chat) customer.chat = [];
 
       const trimmed = (text || '').trim();
-      const salesText = trimmed || pick(SALES_REPLIES);
+      const salesText = trimmed || pickLine('sales', customer, customer.chat.length);
       const now = Date.now();
       customer.chat.push({ id: now, from: 'sales', author: sales.name, text: salesText, ts: now });
-      const tpl = CHAT_TEMPLATES[customer.mood] || CHAT_TEMPLATES['Easy Deal'];
-      customer.chat.push({ id: now + 1, from: 'customer', author: customer.name, text: pick(tpl.reply), ts: now + 100 });
+      customer.chat.push({
+        id: now + 1, from: 'customer', author: customer.name,
+        text: pickLine('customer', customer, customer.chat.length), ts: now + 100,
+      });
       return NextResponse.json({ ok: true, chat: customer.chat });
     }
 
@@ -588,9 +723,14 @@ async function handle(request, { params }) {
       if (!customer) return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
       if (!customer.chat) customer.chat = [];
       const now = Date.now();
-      customer.chat.push({ id: now, from: 'sales', author: sales.name, text: pick(SALES_REPLIES), ts: now });
-      const tpl = CHAT_TEMPLATES[customer.mood] || CHAT_TEMPLATES['Easy Deal'];
-      customer.chat.push({ id: now + 1, from: 'customer', author: customer.name, text: pick(tpl.reply), ts: now + 100 });
+      customer.chat.push({
+        id: now, from: 'sales', author: sales.name,
+        text: pickLine('sales', customer, customer.chat.length), ts: now,
+      });
+      customer.chat.push({
+        id: now + 1, from: 'customer', author: customer.name,
+        text: pickLine('customer', customer, customer.chat.length), ts: now + 100,
+      });
       return NextResponse.json({ ok: true, chat: customer.chat });
     }
 

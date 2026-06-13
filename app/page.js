@@ -582,6 +582,9 @@ const App = () => {
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Award className="h-5 w-5 text-amber-500" /> Sales Leaderboard
+                <Badge variant="secondary" className="ml-auto text-[10px] font-normal">
+                  👑 VIP → Top • 🙂 Normal → Bottom
+                </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -605,7 +608,19 @@ const App = () => {
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex items-center justify-between">
-                            <div className="font-semibold text-sm">{s.name}</div>
+                            <div className="font-semibold text-sm flex items-center gap-2">
+                              {s.name}
+                              {idx === 0 && (st.ratingCount > 0) && (
+                                <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100 text-[9px] px-1.5 py-0">
+                                  👑 VIP Handler
+                                </Badge>
+                              )}
+                              {idx === sales.length - 1 && sales.length > 1 && (st.ratingCount > 0) && (
+                                <Badge variant="secondary" className="text-[9px] px-1.5 py-0">
+                                  🙂 Normal Track
+                                </Badge>
+                              )}
+                            </div>
                             <StarRating value={st.avgRating || null} />
                           </div>
                           <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">

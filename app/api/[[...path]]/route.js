@@ -181,23 +181,43 @@ function getQueue() {
     });
 }
 
+// Avg sales reply latency from chat (customer→sales delta in ms)
+function avgSalesResponseTime(chat) {
+  if (!chat || chat.length < 2) return 0;
+  let total = 0, count = 0;
+  for (let i = 1; i < chat.length; i++) {
+    if (chat[i].from === 'sales' && chat[i - 1].from === 'customer') {
+      total += chat[i].ts - chat[i - 1].ts;
+      count++;
+    }
+  }
+  return count > 0 ? Math.round(total / count) : 0;
+}
+
 function snapshot() {
   const queue = getQueue();
+  // pre-compute avg response per customer (cached on object so history shows it)
+  store.customers.forEach(c => {
+    if (c.chat?.length) c.avgResponseMs = avgSalesResponseTime(c.chat);
+  });
+
   const sales = store.sales.map(s => {
     const ids = s.currentCustomerIds || [];
     const currentCustomers = ids
       .map(id => store.customers.find(c => c.id === id))
       .filter(Boolean);
-    // per-sales aggregate
     const served = store.customers.filter(c => c.servedBy === s.id && c.status === 'finished');
     const ratings = served.map(c => c.rating).filter(r => r != null);
     const avg = ratings.length ? ratings.reduce((a, b) => a + b, 0) / ratings.length : 0;
+    const responseTimes = served.map(c => c.avgResponseMs || 0).filter(t => t > 0);
+    const avgResp = responseTimes.length
+      ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
+      : 0;
     return {
       ...s,
       currentCustomers,
       load: currentCustomers.length,
       capacity: MAX_LOAD,
-      // legacy
       currentCustomer: currentCustomers[0] || null,
       currentCustomerId: ids[0] || null,
       stats: {
@@ -208,6 +228,7 @@ function snapshot() {
         avgRating: Math.round(avg * 10) / 10,
         ratingCount: ratings.length,
         currentLoad: currentCustomers.length,
+        avgResponseMs: avgResp,
       },
     };
   });
@@ -274,8 +295,7 @@ function snapshot() {
 }
 
 // Auto-conclude conversation when chat reaches max length
-function autoConclude(customer, sales) {
-  const bias = {
+function autoConclude(customer, sales) {  const bias = {
     'Easy Deal': { deal: 0.7, followup: 0.2, lost: 0.1 },
     'Negotiator': { deal: 0.35, followup: 0.30, lost: 0.35 },
     'Many Questions': { deal: 0.30, followup: 0.45, lost: 0.25 },

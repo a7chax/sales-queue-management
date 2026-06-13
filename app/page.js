@@ -22,6 +22,9 @@ import {
   ArrowRight, Smile, Meh, Frown, BarChart3, Heart,
 } from 'lucide-react';
 import {
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
+} from '@/components/ui/table';
+import {
   DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator,
 } from '@/components/ui/dropdown-menu';
 
@@ -38,6 +41,12 @@ const formatDuration = (ms) => {
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
   return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+
+const formatMs = (ms) => {
+  if (!ms || ms <= 0) return '—';
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
 };
 
 const MOOD_META = {
@@ -72,6 +81,14 @@ const App = () => {
   const [chatSalesId, setChatSalesId] = useState(null);
   const [chatCustomerId, setChatCustomerId] = useState(null);
   const [chatInput, setChatInput] = useState('');
+  // View chat from history (read-only)
+  const [viewChatOpen, setViewChatOpen] = useState(false);
+  const [viewChatCustomer, setViewChatCustomer] = useState(null);
+  // History filters
+  const [filterResult, setFilterResult] = useState('all');
+  const [filterSales, setFilterSales] = useState('all');
+  const [filterRating, setFilterRating] = useState('all');
+  const [filterSearch, setFilterSearch] = useState('');
 
   const refresh = useCallback(async () => {
     const d = await api('/status');
@@ -441,49 +458,64 @@ const App = () => {
           </Card>
         </div>
 
-        {/* History */}
+        {/* History Table with Filters */}
         <Card className="mt-6 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Trophy className="h-5 w-5 text-emerald-500" /> History ({history.length})
+            <CardTitle className="flex items-center gap-2 flex-wrap">
+              <Trophy className="h-5 w-5 text-emerald-500" />
+              History
+              <Badge variant="secondary" className="text-[10px]">{history.length} total</Badge>
+              <div className="ml-auto flex items-center gap-2 flex-wrap">
+                <Input
+                  placeholder="Cari nama..."
+                  value={filterSearch}
+                  onChange={(e) => setFilterSearch(e.target.value)}
+                  className="h-8 w-44 text-xs"
+                />
+                <Select value={filterResult} onValueChange={setFilterResult}>
+                  <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Result</SelectItem>
+                    <SelectItem value="deal">✓ Deal</SelectItem>
+                    <SelectItem value="lost">✗ Lost</SelectItem>
+                    <SelectItem value="followup">📞 Follow Up</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={filterSales} onValueChange={setFilterSales}>
+                  <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Sales</SelectItem>
+                    {sales.map(s => <SelectItem key={s.id} value={String(s.id)}>{s.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <Select value={filterRating} onValueChange={setFilterRating}>
+                  <SelectTrigger className="h-8 w-32 text-xs"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Rating</SelectItem>
+                    <SelectItem value="high">😊 ≥ 4 ⭐</SelectItem>
+                    <SelectItem value="mid">😐 3 - 4 ⭐</SelectItem>
+                    <SelectItem value="low">😞 &lt; 3 ⭐</SelectItem>
+                  </SelectContent>
+                </Select>
+                {(filterResult !== 'all' || filterSales !== 'all' || filterRating !== 'all' || filterSearch) && (
+                  <Button variant="ghost" size="sm" className="h-8 text-xs"
+                    onClick={() => { setFilterResult('all'); setFilterSales('all'); setFilterRating('all'); setFilterSearch(''); }}>
+                    <XCircle className="h-3 w-3 mr-1" /> Clear
+                  </Button>
+                )}
+              </div>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {history.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-6">Belum ada history.</p>
-            ) : (
-              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                {history.slice(0, 12).map((c) => {
-                  const r = RESULT_META[c.result] || RESULT_META.lost;
-                  const Icon = r.icon;
-                  const dur = c.finishedAt && c.startedAt ? c.finishedAt - c.startedAt : 0;
-                  return (
-                    <div key={c.id} className={`p-3 rounded-lg border ${r.bg}`}>
-                      <div className="flex items-center gap-3">
-                        <Icon className={`h-6 w-6 ${r.cls} flex-shrink-0`} />
-                        <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm truncate">
-                            {c.type === 'premium' ? '👑' : '🙂'} {c.name}
-                          </div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            <span className={`font-semibold ${r.cls}`}>{r.label}</span>
-                            <span>• {formatDuration(dur)}</span>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="mt-2 flex items-center justify-between">
-                        <StarRating value={c.rating} />
-                      </div>
-                      {c.feedback && (
-                        <div className="mt-1 text-[11px] italic text-slate-600 truncate" title={c.feedback}>
-                          "{c.feedback}"
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+            <HistoryTable
+              history={history}
+              sales={sales}
+              filterResult={filterResult}
+              filterSales={filterSales}
+              filterRating={filterRating}
+              filterSearch={filterSearch}
+              onView={(c) => { setViewChatCustomer(c); setViewChatOpen(true); }}
+            />
           </CardContent>
         </Card>
 
@@ -502,6 +534,11 @@ const App = () => {
                   .map((s, idx) => {
                     const st = s.stats || {};
                     const closeRate = st.served ? Math.round((st.deals / st.served) * 100) : 0;
+                    const resp = st.avgResponseMs || 0;
+                    const respColor = resp === 0 ? 'text-slate-400'
+                      : resp < 1500 ? 'text-emerald-600'
+                      : resp < 3000 ? 'text-amber-600'
+                      : 'text-rose-600';
                     return (
                       <div key={s.id} className="p-3 rounded-lg border bg-slate-50/50 flex items-center gap-3">
                         <div className={`h-9 w-9 rounded-full flex items-center justify-center font-bold text-white ${
@@ -514,11 +551,14 @@ const App = () => {
                             <div className="font-semibold text-sm">{s.name}</div>
                             <StarRating value={st.avgRating || null} />
                           </div>
-                          <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
-                            <span>👥 {st.served || 0} served</span>
-                            <span className="text-emerald-600">✓ {st.deals || 0} deal</span>
+                          <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground flex-wrap">
+                            <span>👥 {st.served || 0}</span>
+                            <span className="text-emerald-600">✓ {st.deals || 0}</span>
                             <span className="text-rose-600">✗ {st.lost || 0}</span>
                             <span className="text-blue-600">📞 {st.followup || 0}</span>
+                            <span className={`flex items-center gap-1 font-medium ${respColor}`}>
+                              ⚡ {formatMs(resp)}
+                            </span>
                             <span className="ml-auto font-semibold text-slate-700">
                               {closeRate}% close
                             </span>
@@ -677,6 +717,67 @@ const App = () => {
                 </span>
               } />
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* View Chat (read-only history) Dialog */}
+      <Dialog open={viewChatOpen} onOpenChange={setViewChatOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-emerald-500" />
+              Chat History
+            </DialogTitle>
+          </DialogHeader>
+          {viewChatCustomer && (
+            <>
+              <div className="flex items-center justify-between text-xs -mt-2">
+                <div className="flex items-center gap-1">
+                  <span className="font-semibold">
+                    {viewChatCustomer.type === 'premium' ? '👑' : '🙂'} {viewChatCustomer.name}
+                  </span>
+                  <span className="text-muted-foreground">•</span>
+                  <Badge variant="secondary" className={MOOD_META[viewChatCustomer.mood]?.cls}>
+                    {MOOD_META[viewChatCustomer.mood]?.emoji} {viewChatCustomer.mood}
+                  </Badge>
+                </div>
+                <div className="flex items-center gap-2">
+                  <StarRating value={viewChatCustomer.rating} size={12} />
+                  <Badge variant="secondary" className={`${RESULT_META[viewChatCustomer.result]?.bg} ${RESULT_META[viewChatCustomer.result]?.cls}`}>
+                    {RESULT_META[viewChatCustomer.result]?.label}
+                  </Badge>
+                </div>
+              </div>
+              <div className="text-[10px] text-muted-foreground -mt-1">
+                Avg response: <strong>{formatMs(viewChatCustomer.avgResponseMs)}</strong>
+                {' • '}Duration: <strong>{formatDuration((viewChatCustomer.finishedAt || 0) - (viewChatCustomer.startedAt || 0))}</strong>
+                {' • '}{viewChatCustomer.chat?.length || 0} messages
+              </div>
+              <div className="h-80 overflow-y-auto bg-slate-50 rounded-lg p-3 space-y-2 border">
+                {(viewChatCustomer.chat || []).length === 0 ? (
+                  <p className="text-center text-xs text-muted-foreground py-8">Tidak ada chat</p>
+                ) : (viewChatCustomer.chat || []).map((m) => (
+                  <div key={m.id} className={`flex ${m.from === 'sales' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                      m.from === 'sales'
+                        ? 'bg-blue-500 text-white rounded-br-sm'
+                        : 'bg-white border rounded-bl-sm'
+                    }`}>
+                      <div className={`text-[10px] mb-0.5 ${m.from === 'sales' ? 'text-blue-100' : 'text-muted-foreground'}`}>
+                        {m.author} • {new Date(m.ts).toLocaleTimeString('id-ID', { hour12: false })}
+                      </div>
+                      <div>{m.text}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {viewChatCustomer.feedback && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-xs italic text-slate-700">
+                  💬 "{viewChatCustomer.feedback}"
+                </div>
+              )}
+            </>
           )}
         </DialogContent>
       </Dialog>
@@ -957,6 +1058,93 @@ const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onChat, onCustom
           <XCircle className="h-3.5 w-3.5 mr-1" /> Remove
         </Button>
       </div>
+    </div>
+  );
+};
+
+const HistoryTable = ({ history, sales, filterResult, filterSales, filterRating, filterSearch, onView }) => {
+  const filtered = history.filter((c) => {
+    if (filterResult !== 'all' && c.result !== filterResult) return false;
+    if (filterSales !== 'all' && String(c.servedBy) !== filterSales) return false;
+    if (filterRating === 'high' && (c.rating || 0) < 4) return false;
+    if (filterRating === 'mid' && ((c.rating || 0) < 3 || (c.rating || 0) >= 4)) return false;
+    if (filterRating === 'low' && ((c.rating || 0) === 0 || (c.rating || 0) >= 3)) return false;
+    if (filterSearch && !c.name.toLowerCase().includes(filterSearch.toLowerCase())) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    return (
+      <div className="text-center py-10 text-sm text-muted-foreground">
+        {history.length === 0 ? 'Belum ada history.' : 'Tidak ada data sesuai filter.'}
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-x-auto rounded-lg border">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-slate-50">
+            <TableHead className="w-12 text-xs">#</TableHead>
+            <TableHead className="text-xs">Customer</TableHead>
+            <TableHead className="text-xs">Mood</TableHead>
+            <TableHead className="text-xs">Sales</TableHead>
+            <TableHead className="text-xs">Result</TableHead>
+            <TableHead className="text-xs">Rating</TableHead>
+            <TableHead className="text-xs">Duration</TableHead>
+            <TableHead className="text-xs">Avg Reply</TableHead>
+            <TableHead className="text-xs">Feedback</TableHead>
+            <TableHead className="text-xs w-20"></TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filtered.slice(0, 50).map((c) => {
+            const sname = sales.find(s => s.id === c.servedBy)?.name || '—';
+            const r = RESULT_META[c.result] || RESULT_META.lost;
+            const dur = c.finishedAt && c.startedAt ? c.finishedAt - c.startedAt : 0;
+            return (
+              <TableRow key={c.id} className="text-xs hover:bg-slate-50">
+                <TableCell className="text-muted-foreground">#{c.id}</TableCell>
+                <TableCell className="font-medium">
+                  {c.type === 'premium' ? '👑' : '🙂'} {c.name}
+                </TableCell>
+                <TableCell>
+                  <Badge variant="secondary" className={`${MOOD_META[c.mood]?.cls} text-[10px]`}>
+                    {MOOD_META[c.mood]?.emoji} {c.mood}
+                  </Badge>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{sname}</TableCell>
+                <TableCell>
+                  <Badge variant="secondary" className={`${r.bg} ${r.cls} text-[10px]`}>
+                    {r.label}
+                  </Badge>
+                </TableCell>
+                <TableCell><StarRating value={c.rating} size={11} /></TableCell>
+                <TableCell className="font-mono text-[11px]">{formatDuration(dur)}</TableCell>
+                <TableCell className="font-mono text-[11px]">
+                  <span className={(c.avgResponseMs || 0) < 1000 ? 'text-emerald-600' : (c.avgResponseMs || 0) < 3000 ? 'text-amber-600' : 'text-rose-600'}>
+                    {formatMs(c.avgResponseMs)}
+                  </span>
+                </TableCell>
+                <TableCell className="text-[11px] italic text-muted-foreground max-w-[180px] truncate" title={c.feedback}>
+                  {c.feedback ? `"${c.feedback}"` : '—'}
+                </TableCell>
+                <TableCell>
+                  <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => onView(c)}>
+                    <MessageCircle className="h-3 w-3 mr-1" /> Chat
+                  </Button>
+                </TableCell>
+              </TableRow>
+            );
+          })}
+        </TableBody>
+      </Table>
+      {filtered.length > 50 && (
+        <p className="text-[10px] text-muted-foreground text-center py-2 border-t">
+          Menampilkan 50 dari {filtered.length} hasil
+        </p>
+      )}
     </div>
   );
 };

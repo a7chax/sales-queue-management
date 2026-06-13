@@ -86,6 +86,7 @@ const App = () => {
   const [finishResult, setFinishResult] = useState('deal');
   const [autoGen, setAutoGen] = useState(true);
   const [autoChat, setAutoChat] = useState(true);
+  const [autoSeed, setAutoSeed] = useState(false);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatSalesId, setChatSalesId] = useState(null);
   const [chatCustomerId, setChatCustomerId] = useState(null);
@@ -136,6 +137,23 @@ const App = () => {
     }, 2500);
     return () => clearInterval(i);
   }, [refresh]);
+
+  // Auto-seed batch of 20 mixed customers every 20s when toggled ON
+  const autoSeedRef = useRef(autoSeed);
+  autoSeedRef.current = autoSeed;
+  useEffect(() => {
+    if (!autoSeed) return;
+    // Fire immediately on toggle ON
+    const fire = async () => {
+      await api('/demo/batch', { method: 'POST', body: JSON.stringify({ count: 20 }) });
+      refresh();
+    };
+    fire();
+    const i = setInterval(() => {
+      if (autoSeedRef.current) fire();
+    }, 20000);
+    return () => clearInterval(i);
+  }, [autoSeed, refresh]);
 
   const addCustomer = async () => {
     if (!name.trim()) return;
@@ -259,8 +277,15 @@ const App = () => {
               <MessageCircle className="h-4 w-4 mr-2" />
               Auto-Chat: {autoChat ? 'ON' : 'OFF'}
             </Button>
-            <Button variant="outline" size="sm" onClick={seed}>
-              <Sparkles className="h-4 w-4 mr-2" /> Demo Data
+            <Button
+              variant={autoSeed ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setAutoSeed(!autoSeed)}
+              className={autoSeed ? 'bg-violet-600 hover:bg-violet-700' : ''}
+              title="Auto-batch 20 mixed customers every 20s"
+            >
+              <Sparkles className="h-4 w-4 mr-2" />
+              Demo Mode: {autoSeed ? 'ON (+20/20s)' : 'OFF'}
             </Button>
             <Button variant="outline" size="sm" onClick={reset}>
               <RotateCcw className="h-4 w-4 mr-2" /> Reset

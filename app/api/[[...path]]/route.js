@@ -647,6 +647,24 @@ async function handle(request, { params }) {
       return NextResponse.json({ ok: true, snapshot: snapshot() });
     }
 
+    // Batch demo: insert N (default 20) random customers, mix of premium & normal (~40% premium)
+    if (path === '/demo/batch' && method === 'POST') {
+      const count = Math.max(1, Math.min(100, body.count || 20));
+      let added = 0;
+      for (let i = 0; i < count; i++) {
+        const type = Math.random() < 0.4 ? 'premium' : 'normal';
+        // pick a non-duplicate name preferably
+        const last = store.customers.at(-1)?.name;
+        let nm = pick(NAMES);
+        let tries = 0;
+        while (nm === last && tries++ < 5) nm = pick(NAMES);
+        store.customers.push(makeCustomer({ name: nm, type }));
+        added++;
+      }
+      tryAutoAssign();
+      return NextResponse.json({ ok: true, added, snapshot: snapshot() });
+    }
+
     // auto-generate 1 random customer (for the 10s ticker)
     if (path === '/demo/random' && method === 'POST') {
       // avoid duplicate consecutive names

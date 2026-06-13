@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -13,8 +13,11 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from '@/components/ui/select';
 import {
-  UserPlus, Play, CheckCircle2, MessageSquareWarning, RotateCcw, Sparkles,
-  Crown, User, Clock, Users, Activity, Trophy, Plus,
+  RadioGroup, RadioGroupItem,
+} from '@/components/ui/radio-group';
+import {
+  UserPlus, Play, CheckCircle2, RotateCcw, Sparkles, Crown,
+  Clock, Users, Activity, Trophy, XCircle, Phone, Pause, PlayCircle,
 } from 'lucide-react';
 
 const api = async (path, opts = {}) => {
@@ -26,18 +29,39 @@ const api = async (path, opts = {}) => {
 };
 
 const formatDuration = (ms) => {
-  if (!ms) return '0:00';
+  if (!ms || ms < 0) return '00:00';
   const s = Math.floor(ms / 1000);
   const m = Math.floor(s / 60);
-  return `${m}:${String(s % 60).padStart(2, '0')}`;
+  return `${String(m).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+};
+
+const MOOD_META = {
+  'Easy Deal': { emoji: '😊', cls: 'bg-emerald-100 text-emerald-700' },
+  'Negotiator': { emoji: '💸', cls: 'bg-amber-100 text-amber-700' },
+  'Many Questions': { emoji: '❓', cls: 'bg-blue-100 text-blue-700' },
+};
+
+const RESULT_META = {
+  deal: { label: 'Deal', icon: CheckCircle2, cls: 'text-emerald-600', bg: 'bg-emerald-50' },
+  lost: { label: 'Lost', icon: XCircle, cls: 'text-rose-600', bg: 'bg-rose-50' },
+  followup: { label: 'Follow Up', icon: Phone, cls: 'text-blue-600', bg: 'bg-blue-50' },
 };
 
 const App = () => {
-  const [data, setData] = useState({ queue: [], sales: [], customers: [], stats: { waiting: 0, serving: 0, negotiating: 0, finished: 0 } });
+  const [data, setData] = useState({
+    queue: [], sales: [], customers: [], history: [],
+    stats: { waiting: 0, serving: 0, finished: 0, deal: 0, lost: 0, followup: 0 },
+  });
   const [now, setNow] = useState(Date.now());
-  const [open, setOpen] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
   const [name, setName] = useState('');
   const [type, setType] = useState('normal');
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailCustomer, setDetailCustomer] = useState(null);
+  const [finishOpen, setFinishOpen] = useState(false);
+  const [finishSales, setFinishSales] = useState(null);
+  const [finishResult, setFinishResult] = useState('deal');
+  const [autoGen, setAutoGen] = useState(true);
 
   const refresh = useCallback(async () => {
     const d = await api('/status');
@@ -46,15 +70,28 @@ const App = () => {
 
   useEffect(() => {
     refresh();
-    const i = setInterval(refresh, 1500);
-    const t = setInterval(() => setNow(Date.now()), 1000);
-    return () => { clearInterval(i); clearInterval(t); };
+    const poll = setInterval(refresh, 1500);
+    const ticker = setInterval(() => setNow(Date.now()), 1000);
+    return () => { clearInterval(poll); clearInterval(ticker); };
+  }, [refresh]);
+
+  // Auto-generate customer every 10 seconds
+  const autoGenRef = useRef(autoGen);
+  autoGenRef.current = autoGen;
+  useEffect(() => {
+    const i = setInterval(async () => {
+      if (autoGenRef.current) {
+        await api('/demo/random', { method: 'POST' });
+        refresh();
+      }
+    }, 10000);
+    return () => clearInterval(i);
   }, [refresh]);
 
   const addCustomer = async () => {
     if (!name.trim()) return;
     await api('/customers', { method: 'POST', body: JSON.stringify({ name, type }) });
-    setName(''); setType('normal'); setOpen(false);
+    setName(''); setType('normal'); setAddOpen(false);
     refresh();
   };
 
@@ -63,13 +100,19 @@ const App = () => {
     refresh();
   };
 
-  const finishService = async (salesId) => {
-    await api('/service/finish', { method: 'POST', body: JSON.stringify({ salesId }) });
-    refresh();
+  const openFinish = (sales) => {
+    setFinishSales(sales);
+    setFinishResult('deal');
+    setFinishOpen(true);
   };
 
-  const toggleNegotiate = async (salesId) => {
-    await api('/service/negotiate', { method: 'POST', body: JSON.stringify({ salesId }) });
+  const confirmFinish = async () => {
+    await api('/service/finish', {
+      method: 'POST',
+      body: JSON.stringify({ salesId: finishSales.id, result: finishResult }),
+    });
+    setFinishOpen(false);
+    setFinishSales(null);
     refresh();
   };
 
@@ -83,47 +126,53 @@ const App = () => {
     refresh();
   };
 
-  const addSales = async () => {
-    await api('/sales/add', { method: 'POST', body: JSON.stringify({}) });
-    refresh();
+  const openDetail = (customer) => {
+    setDetailCustomer(customer);
+    setDetailOpen(true);
   };
 
-  const { queue, sales, stats } = data;
+  const { queue, sales, stats, history } = data;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
-      {/* Header */}
-      <header className="border-b bg-white/70 backdrop-blur-md sticky top-0 z-40">
-        <div className="container mx-auto px-6 py-4 flex items-center justify-between">
+      <header className="border-b bg-white/80 backdrop-blur-md sticky top-0 z-40">
+        <div className="container mx-auto px-6 py-4 flex items-center justify-between flex-wrap gap-3">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-slate-900 to-slate-700 flex items-center justify-center text-white shadow-lg">
               <Activity className="h-5 w-5" />
             </div>
             <div>
               <h1 className="text-xl font-bold tracking-tight">Sales Queue Manager</h1>
-              <p className="text-xs text-muted-foreground">Sistem Manajemen Antrean Penjualan • Real-time</p>
+              <p className="text-xs text-muted-foreground">Hackathon MVP • Auto-generate every 10s</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Button
+              variant={autoGen ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setAutoGen(!autoGen)}
+              className={autoGen ? 'bg-emerald-600 hover:bg-emerald-700' : ''}
+            >
+              {autoGen ? <Pause className="h-4 w-4 mr-2" /> : <PlayCircle className="h-4 w-4 mr-2" />}
+              Auto-Gen: {autoGen ? 'ON' : 'OFF'}
+            </Button>
             <Button variant="outline" size="sm" onClick={seed}>
               <Sparkles className="h-4 w-4 mr-2" /> Demo Data
             </Button>
             <Button variant="outline" size="sm" onClick={reset}>
               <RotateCcw className="h-4 w-4 mr-2" /> Reset
             </Button>
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={addOpen} onOpenChange={setAddOpen}>
               <DialogTrigger asChild>
                 <Button size="sm" className="bg-slate-900 hover:bg-slate-800">
-                  <UserPlus className="h-4 w-4 mr-2" /> Tambah Pelanggan
+                  <UserPlus className="h-4 w-4 mr-2" /> Add Customer
                 </Button>
               </DialogTrigger>
               <DialogContent>
-                <DialogHeader>
-                  <DialogTitle>Tambah Pelanggan Baru</DialogTitle>
-                </DialogHeader>
+                <DialogHeader><DialogTitle>Add Customer</DialogTitle></DialogHeader>
                 <div className="space-y-4 py-2">
                   <div className="space-y-2">
-                    <Label>Nama Pelanggan</Label>
+                    <Label>Nama</Label>
                     <Input
                       placeholder="contoh: Budi Santoso"
                       value={name}
@@ -133,23 +182,20 @@ const App = () => {
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label>Tipe Pelanggan</Label>
+                    <Label>Tipe</Label>
                     <Select value={type} onValueChange={setType}>
                       <SelectTrigger><SelectValue /></SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="normal">
-                          <div className="flex items-center gap-2"><User className="h-4 w-4" /> Normal</div>
-                        </SelectItem>
-                        <SelectItem value="premium">
-                          <div className="flex items-center gap-2"><Crown className="h-4 w-4 text-amber-500" /> Premium (Prioritas)</div>
-                        </SelectItem>
+                        <SelectItem value="normal">🙂 Normal</SelectItem>
+                        <SelectItem value="premium">👑 Premium</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
+                  <p className="text-xs text-muted-foreground">Mood akan di-generate otomatis (Easy Deal / Negotiator / Many Questions).</p>
                 </div>
                 <DialogFooter>
-                  <Button variant="outline" onClick={() => setOpen(false)}>Batal</Button>
-                  <Button onClick={addCustomer} className="bg-slate-900 hover:bg-slate-800">Tambah ke Antrean</Button>
+                  <Button variant="outline" onClick={() => setAddOpen(false)}>Batal</Button>
+                  <Button onClick={addCustomer} className="bg-slate-900 hover:bg-slate-800">Tambah</Button>
                 </DialogFooter>
               </DialogContent>
             </Dialog>
@@ -159,19 +205,20 @@ const App = () => {
 
       <main className="container mx-auto px-6 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-          <StatCard icon={Clock} label="Menunggu" value={stats.waiting} color="text-amber-600" bg="bg-amber-50" />
-          <StatCard icon={Users} label="Dilayani" value={stats.serving} color="text-blue-600" bg="bg-blue-50" />
-          <StatCard icon={MessageSquareWarning} label="Negosiasi" value={stats.negotiating} color="text-purple-600" bg="bg-purple-50" />
-          <StatCard icon={Trophy} label="Selesai" value={stats.finished} color="text-emerald-600" bg="bg-emerald-50" />
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+          <StatCard icon={Clock} label="Waiting" value={stats.waiting} color="text-amber-600" bg="bg-amber-50" />
+          <StatCard icon={Users} label="Serving" value={stats.serving} color="text-blue-600" bg="bg-blue-50" />
+          <StatCard icon={CheckCircle2} label="Deal" value={stats.deal} color="text-emerald-600" bg="bg-emerald-50" />
+          <StatCard icon={XCircle} label="Lost" value={stats.lost} color="text-rose-600" bg="bg-rose-50" />
+          <StatCard icon={Phone} label="Follow Up" value={stats.followup} color="text-blue-600" bg="bg-blue-50" />
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-6">
+        <div className="grid lg:grid-cols-5 gap-6">
           {/* Queue */}
-          <Card className="lg:col-span-1 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="lg:col-span-2 shadow-sm">
+            <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Clock className="h-5 w-5 text-amber-500" /> Antrean ({queue.length})
+                <Clock className="h-5 w-5 text-amber-500" /> Waiting Queue ({queue.length})
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -181,46 +228,53 @@ const App = () => {
                   Tidak ada antrian
                 </div>
               ) : (
-                <div className="space-y-2">
-                  {queue.map((c, idx) => (
-                    <div
-                      key={c.id}
-                      className={`p-3 rounded-lg border flex items-center justify-between transition-all ${
-                        c.type === 'premium'
-                          ? 'bg-gradient-to-r from-amber-50 to-yellow-50 border-amber-200'
-                          : 'bg-slate-50 border-slate-200'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                          c.type === 'premium' ? 'bg-amber-500 text-white' : 'bg-slate-300 text-slate-700'
-                        }`}>
-                          {idx + 1}
-                        </div>
-                        <div>
-                          <div className="font-medium text-sm">{c.name}</div>
-                          <div className="text-xs text-muted-foreground flex items-center gap-1">
-                            {c.type === 'premium' ? <><Crown className="h-3 w-3 text-amber-500" /> Premium</> : <><User className="h-3 w-3" /> Normal</>}
-                            <span>• {formatDuration(now - c.createdAt)}</span>
+                <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+                  {queue.map((c, idx) => {
+                    const mm = MOOD_META[c.mood] || {};
+                    return (
+                      <button
+                        key={c.id}
+                        onClick={() => openDetail(c)}
+                        className={`w-full text-left p-3 rounded-lg border flex items-center justify-between transition-all hover:shadow-md ${
+                          c.type === 'premium'
+                            ? 'bg-gradient-to-r from-amber-50 to-yellow-50 border-amber-200'
+                            : 'bg-slate-50 border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                            c.type === 'premium' ? 'bg-amber-500 text-white' : 'bg-slate-300 text-slate-700'
+                          }`}>
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <div className="font-medium text-sm flex items-center gap-1">
+                              {c.type === 'premium' ? '👑' : '🙂'} {c.name}
+                            </div>
+                            <div className="text-xs text-muted-foreground flex items-center gap-2">
+                              <span>{c.type === 'premium' ? 'Premium' : 'Normal'}</span>
+                              <span>•</span>
+                              <span>{mm.emoji} {c.mood}</span>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    </div>
-                  ))}
+                        <div className="text-xs text-muted-foreground font-mono">
+                          {formatDuration(now - c.createdAt)}
+                        </div>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Sales Panel */}
-          <Card className="lg:col-span-2 shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between">
+          <Card className="lg:col-span-3 shadow-sm">
+            <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-blue-500" /> Panel Sales ({sales.length})
+                <Users className="h-5 w-5 text-blue-500" /> Sales Panel
               </CardTitle>
-              <Button size="sm" variant="ghost" onClick={addSales}>
-                <Plus className="h-4 w-4 mr-1" /> Tambah Sales
-              </Button>
             </CardHeader>
             <CardContent>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -231,8 +285,8 @@ const App = () => {
                     now={now}
                     queueEmpty={queue.length === 0}
                     onStart={() => startService(s.id)}
-                    onFinish={() => finishService(s.id)}
-                    onNegotiate={() => toggleNegotiate(s.id)}
+                    onFinish={() => openFinish(s)}
+                    onCustomerClick={openDetail}
                   />
                 ))}
               </div>
@@ -243,65 +297,117 @@ const App = () => {
         {/* History */}
         <Card className="mt-6 shadow-sm">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Trophy className="h-5 w-5 text-emerald-500" /> Riwayat Pelanggan
+            <CardTitle className="flex items-center gap-2">
+              <Trophy className="h-5 w-5 text-emerald-500" /> History ({history.length})
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {data.customers.length === 0 ? (
-              <p className="text-sm text-muted-foreground text-center py-4">Belum ada aktivitas. Klik "Demo Data" untuk mulai.</p>
+            {history.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">Belum ada history.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="text-left text-xs uppercase text-muted-foreground border-b">
-                    <tr>
-                      <th className="py-2">ID</th>
-                      <th>Nama</th>
-                      <th>Tipe</th>
-                      <th>Status</th>
-                      <th>Sales</th>
-                      <th>Durasi</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {[...data.customers].reverse().slice(0, 15).map((c) => {
-                      const dur = c.finishedAt && c.startedAt ? c.finishedAt - c.startedAt : (c.startedAt ? now - c.startedAt : null);
-                      const salesName = c.servedBy ? sales.find(s => s.id === c.servedBy)?.name : '-';
-                      return (
-                        <tr key={c.id} className="border-b last:border-0 hover:bg-slate-50">
-                          <td className="py-2 text-muted-foreground">#{c.id}</td>
-                          <td className="font-medium">{c.name}</td>
-                          <td>
-                            {c.type === 'premium'
-                              ? <Badge className="bg-amber-500 hover:bg-amber-500"><Crown className="h-3 w-3 mr-1" />Premium</Badge>
-                              : <Badge variant="secondary">Normal</Badge>}
-                          </td>
-                          <td><StatusBadge status={c.status} /></td>
-                          <td className="text-muted-foreground">{salesName}</td>
-                          <td className="text-muted-foreground">{dur ? formatDuration(dur) : '-'}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {history.slice(0, 12).map((c) => {
+                  const r = RESULT_META[c.result] || RESULT_META.lost;
+                  const Icon = r.icon;
+                  const dur = c.finishedAt && c.startedAt ? c.finishedAt - c.startedAt : 0;
+                  return (
+                    <div key={c.id} className={`p-3 rounded-lg border flex items-center gap-3 ${r.bg}`}>
+                      <Icon className={`h-6 w-6 ${r.cls} flex-shrink-0`} />
+                      <div className="flex-1 min-w-0">
+                        <div className="font-medium text-sm truncate">
+                          {c.type === 'premium' ? '👑' : '🙂'} {c.name}
+                        </div>
+                        <div className="text-xs text-muted-foreground flex items-center gap-1">
+                          <span className={`font-semibold ${r.cls}`}>{r.label}</span>
+                          <span>• {formatDuration(dur)}</span>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </CardContent>
         </Card>
 
         <footer className="text-center text-xs text-muted-foreground mt-8 py-4">
-          Built with Next.js • In-memory priority queue • Premium customers always prioritized
+          Built with Next.js • In-memory priority queue • Premium first • Auto-gen tiap 10 detik
         </footer>
       </main>
+
+      {/* Customer Detail Dialog */}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {detailCustomer?.type === 'premium' ? '👑' : '🙂'} {detailCustomer?.name}
+            </DialogTitle>
+          </DialogHeader>
+          {detailCustomer && (
+            <div className="space-y-3 py-2">
+              <DetailRow label="Type" value={
+                <Badge className={detailCustomer.type === 'premium' ? 'bg-amber-500 hover:bg-amber-500' : ''} variant={detailCustomer.type === 'premium' ? 'default' : 'secondary'}>
+                  {detailCustomer.type === 'premium' ? <><Crown className="h-3 w-3 mr-1" /> Premium</> : 'Normal'}
+                </Badge>
+              } />
+              <DetailRow label="Mood" value={
+                <Badge variant="secondary" className={MOOD_META[detailCustomer.mood]?.cls}>
+                  {MOOD_META[detailCustomer.mood]?.emoji} {detailCustomer.mood}
+                </Badge>
+              } />
+              <DetailRow label="Status" value={<StatusBadge status={detailCustomer.status} />} />
+              {detailCustomer.result && (
+                <DetailRow label="Result" value={
+                  <span className={`font-semibold ${RESULT_META[detailCustomer.result]?.cls}`}>
+                    {RESULT_META[detailCustomer.result]?.label}
+                  </span>
+                } />
+              )}
+              <DetailRow label="Waktu Masuk" value={
+                <span className="text-sm text-muted-foreground">
+                  {new Date(detailCustomer.createdAt).toLocaleTimeString('id-ID')}
+                </span>
+              } />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Finish Dialog */}
+      <Dialog open={finishOpen} onOpenChange={setFinishOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Finish Service</DialogTitle></DialogHeader>
+          {finishSales && (
+            <div className="space-y-4 py-2">
+              <p className="text-sm">
+                <span className="text-muted-foreground">{finishSales.name} melayani:</span>{' '}
+                <span className="font-semibold">
+                  {finishSales.currentCustomer?.type === 'premium' ? '👑' : '🙂'}{' '}
+                  {finishSales.currentCustomer?.name}
+                </span>
+              </p>
+              <RadioGroup value={finishResult} onValueChange={setFinishResult} className="space-y-2">
+                <FinishOption value="deal" current={finishResult} icon={CheckCircle2} label="Deal" color="emerald" />
+                <FinishOption value="lost" current={finishResult} icon={XCircle} label="Lost" color="rose" />
+                <FinishOption value="followup" current={finishResult} icon={Phone} label="Follow Up" color="blue" />
+              </RadioGroup>
+            </div>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setFinishOpen(false)}>Batal</Button>
+            <Button onClick={confirmFinish} className="bg-slate-900 hover:bg-slate-800">Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };
 
 const StatCard = ({ icon: Icon, label, value, color, bg }) => (
   <Card className="shadow-sm">
-    <CardContent className="p-4 flex items-center gap-4">
-      <div className={`h-12 w-12 rounded-xl ${bg} flex items-center justify-center`}>
-        <Icon className={`h-6 w-6 ${color}`} />
+    <CardContent className="p-4 flex items-center gap-3">
+      <div className={`h-10 w-10 rounded-xl ${bg} flex items-center justify-center`}>
+        <Icon className={`h-5 w-5 ${color}`} />
       </div>
       <div>
         <div className="text-xs text-muted-foreground uppercase tracking-wide">{label}</div>
@@ -313,86 +419,108 @@ const StatCard = ({ icon: Icon, label, value, color, bg }) => (
 
 const StatusBadge = ({ status }) => {
   const map = {
-    waiting: { label: 'Menunggu', cls: 'bg-amber-100 text-amber-700 hover:bg-amber-100' },
-    serving: { label: 'Dilayani', cls: 'bg-blue-100 text-blue-700 hover:bg-blue-100' },
-    negotiating: { label: 'Negosiasi', cls: 'bg-purple-100 text-purple-700 hover:bg-purple-100' },
-    finished: { label: 'Selesai', cls: 'bg-emerald-100 text-emerald-700 hover:bg-emerald-100' },
+    waiting: { label: 'Waiting', cls: 'bg-amber-100 text-amber-700' },
+    serving: { label: 'Being Served', cls: 'bg-blue-100 text-blue-700' },
+    finished: { label: 'Finished', cls: 'bg-emerald-100 text-emerald-700' },
   };
   const v = map[status] || { label: status, cls: '' };
   return <Badge className={v.cls} variant="secondary">{v.label}</Badge>;
 };
 
-const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onNegotiate }) => {
-  const c = sales.currentCustomer;
-  const isBusy = sales.status !== 'available';
-  const isNegotiating = sales.status === 'negotiating';
-  const dur = sales.startedAt ? now - sales.startedAt : 0;
+const DetailRow = ({ label, value }) => (
+  <div className="flex items-center justify-between border-b pb-2 last:border-0">
+    <span className="text-sm text-muted-foreground">{label}</span>
+    <div>{value}</div>
+  </div>
+);
 
-  const accentBorder = isNegotiating
-    ? 'border-purple-300 bg-purple-50/40'
-    : isBusy
-      ? 'border-blue-300 bg-blue-50/40'
-      : 'border-emerald-200 bg-emerald-50/30';
+const FinishOption = ({ value, current, icon: Icon, label, color }) => {
+  const active = current === value;
+  const colorMap = {
+    emerald: 'border-emerald-300 bg-emerald-50',
+    rose: 'border-rose-300 bg-rose-50',
+    blue: 'border-blue-300 bg-blue-50',
+  };
+  const iconColorMap = {
+    emerald: 'text-emerald-600',
+    rose: 'text-rose-600',
+    blue: 'text-blue-600',
+  };
+  return (
+    <label className={`flex items-center gap-3 p-3 rounded-lg border-2 cursor-pointer transition-all ${
+      active ? colorMap[color] : 'border-slate-200 hover:bg-slate-50'
+    }`}>
+      <RadioGroupItem value={value} id={value} />
+      <Icon className={`h-5 w-5 ${iconColorMap[color]}`} />
+      <span className="font-medium">{label}</span>
+    </label>
+  );
+};
+
+const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onCustomerClick }) => {
+  const c = sales.currentCustomer;
+  const isBusy = !!c;
+  const dur = sales.startedAt ? now - sales.startedAt : 0;
+  const mm = c ? MOOD_META[c.mood] || {} : {};
 
   return (
-    <div className={`rounded-xl border-2 p-4 transition-all ${accentBorder}`}>
+    <div className={`rounded-xl border-2 p-4 transition-all ${
+      isBusy ? 'border-blue-300 bg-blue-50/40' : 'border-emerald-200 bg-emerald-50/30'
+    }`}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-white ${
-            isNegotiating ? 'bg-purple-500' : isBusy ? 'bg-blue-500' : 'bg-emerald-500'
+            isBusy ? 'bg-blue-500' : 'bg-emerald-500'
           }`}>
             {sales.name.split(' ').pop()[0]}
           </div>
           <div>
             <div className="font-semibold text-sm">{sales.name}</div>
-            <div className="text-xs text-muted-foreground capitalize">
-              {sales.status === 'available' ? 'Tersedia' : sales.status === 'negotiating' ? 'Negosiasi' : 'Melayani'}
+            <div className="text-xs text-muted-foreground">
+              {isBusy ? 'Serving' : 'Available'}
             </div>
           </div>
         </div>
         {isBusy && (
           <div className="text-right">
-            <div className="text-xs text-muted-foreground">Durasi</div>
+            <div className="text-xs text-muted-foreground">⏱</div>
             <div className="font-mono text-sm font-semibold">{formatDuration(dur)}</div>
           </div>
         )}
       </div>
 
       {c ? (
-        <div className="mb-3 p-3 rounded-lg bg-white border">
+        <button
+          onClick={() => onCustomerClick(c)}
+          className="w-full mb-3 p-3 rounded-lg bg-white border text-left hover:shadow transition-all"
+        >
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              {c.type === 'premium' ? <Crown className="h-4 w-4 text-amber-500" /> : <User className="h-4 w-4 text-slate-500" />}
-              <span className="font-medium text-sm">{c.name}</span>
+            <div className="font-medium text-sm">
+              {c.type === 'premium' ? '👑' : '🙂'} {c.name}
             </div>
             <Badge variant="secondary" className={c.type === 'premium' ? 'bg-amber-100 text-amber-700' : ''}>
               {c.type === 'premium' ? 'Premium' : 'Normal'}
             </Badge>
           </div>
-        </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            Mood: {mm.emoji} {c.mood}
+          </div>
+        </button>
       ) : (
         <div className="mb-3 p-3 rounded-lg bg-white/50 border border-dashed text-center text-xs text-muted-foreground">
           Tidak ada pelanggan
         </div>
       )}
 
-      <div className="flex gap-2">
-        {!isBusy ? (
-          <Button size="sm" className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={onStart} disabled={queueEmpty}>
-            <Play className="h-3.5 w-3.5 mr-1" /> Start
-          </Button>
-        ) : (
-          <>
-            <Button size="sm" variant="outline" className="flex-1" onClick={onNegotiate}>
-              <MessageSquareWarning className="h-3.5 w-3.5 mr-1" />
-              {isNegotiating ? 'Cancel Nego' : 'Negosiasi'}
-            </Button>
-            <Button size="sm" className="flex-1 bg-slate-900 hover:bg-slate-800" onClick={onFinish}>
-              <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Finish
-            </Button>
-          </>
-        )}
-      </div>
+      {!isBusy ? (
+        <Button size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={onStart} disabled={queueEmpty}>
+          <Play className="h-3.5 w-3.5 mr-1" /> Start Customer
+        </Button>
+      ) : (
+        <Button size="sm" className="w-full bg-slate-900 hover:bg-slate-800" onClick={onFinish}>
+          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Finish
+        </Button>
+      )}
     </div>
   );
 };

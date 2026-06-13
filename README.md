@@ -4,10 +4,13 @@
 
 Built as a hackathon MVP in Next.js with zero external dependencies (no database, no AI, no third-party APIs). Everything runs in-memory and feels like a real production tool.
 
+🏆 **Submitted for [AI Vibe Sprint Jakarta](https://luma.com/gvwov53s?tk=PCFZon) — The Product Folks × Emergent**
+
 ![Tech](https://img.shields.io/badge/Next.js-14-black?logo=nextdotjs)
 ![UI](https://img.shields.io/badge/shadcn%2Fui-+-000)
 ![Tailwind](https://img.shields.io/badge/Tailwind-3-38bdf8?logo=tailwindcss)
 ![Status](https://img.shields.io/badge/status-MVP-success)
+![Hackathon](https://img.shields.io/badge/AI%20Vibe%20Sprint-Jakarta-purple)
 
 ---
 
@@ -448,8 +451,26 @@ MIT — feel free to use, modify, and share.
 
 ---
 
+## 🏆 About the Hackathon
+
+This project was built for **[AI Vibe Sprint Jakarta](https://luma.com/gvwov53s?tk=PCFZon)** — a hackathon hosted by **[The Product Folks](https://theproductfolks.com)** in collaboration with **[Emergent](https://emergent.sh)**.
+
+The challenge: build a working product in a tight time window, focusing on real value rather than over-engineering. This repo demonstrates how far you can go with:
+
+- **No database** — in-memory state only
+- **No AI APIs** — all "intelligence" via templated logic
+- **No third-party services** — pure Next.js
+- **No deployment complexity** — runs anywhere Node runs
+
+…yet still feels like a production-grade operational dashboard.
+
+📅 **Event link**: https://luma.com/gvwov53s?tk=PCFZon
+
+---
+
 ## 🙏 Acknowledgments
 
+- **[The Product Folks](https://theproductfolks.com)** & **[Emergent](https://emergent.sh)** — for organizing [AI Vibe Sprint Jakarta](https://luma.com/gvwov53s?tk=PCFZon) 🎉
 - **shadcn/ui** for beautiful, accessible components out of the box
 - **Lucide** for the icon set
 - **Tailwind CSS** for rapid styling
@@ -457,4 +478,5 @@ MIT — feel free to use, modify, and share.
 
 ---
 
-> Built with ❤️ for the **Hackathon MVP** — proving you can ship a real-feeling product in 1 hour.
+> Built with ❤️ for **AI Vibe Sprint Jakarta** — The Product Folks × Emergent.
+> Proving you can ship a real-feeling product in 1 hour.

@@ -115,15 +115,21 @@ const SALES_REPLIES = [
 ];
 
 function makeCustomer({ name, type, mood }) {
+  const t = type || (Math.random() < 0.4 ? 'premium' : 'normal');
+  // Deal value (IDR): premium 5-50jt, normal 1-10jt
+  const dealValue = t === 'premium'
+    ? Math.round((5 + Math.random() * 45) * 100) * 10000  // 5.0jt - 50.0jt step 10k
+    : Math.round((1 + Math.random() * 9) * 100) * 10000;  // 1.0jt - 10.0jt
   return {
     id: store.nextCustomerId++,
     name: name || pick(NAMES),
-    type: type || (Math.random() < 0.4 ? 'premium' : 'normal'),
+    type: t,
     mood: mood || pick(MOODS),
     status: 'waiting',
     result: null,
     rating: null,
     feedback: null,
+    dealValue,
     createdAt: Date.now(),
     servedBy: null,
     startedAt: null,
@@ -241,6 +247,23 @@ function snapshot() {
   const neutral = finished.filter(c => (c.rating || 0) >= 3 && (c.rating || 0) < 4).length;
   const unsatisfied = finished.filter(c => (c.rating || 0) > 0 && (c.rating || 0) < 3).length;
 
+  // Revenue calculations
+  const dealCustomers = finished.filter(c => c.result === 'deal');
+  const lostCustomers = finished.filter(c => c.result === 'lost');
+  const followupCustomers = finished.filter(c => c.result === 'followup');
+  const activeCustomers = store.customers.filter(c => c.status === 'waiting' || c.status === 'serving');
+
+  const realizedRevenue = dealCustomers.reduce((sum, c) => sum + (c.dealValue || 0), 0);
+  const lostRevenue = lostCustomers.reduce((sum, c) => sum + (c.dealValue || 0), 0);
+  // Potential = follow-up (likely-to-close later) + currently active in pipeline
+  const followupRevenue = followupCustomers.reduce((sum, c) => sum + (c.dealValue || 0), 0);
+  const pipelineRevenue = activeCustomers.reduce((sum, c) => sum + (c.dealValue || 0), 0);
+  const potentialRevenue = followupRevenue + pipelineRevenue;
+  const totalConsideredRevenue = realizedRevenue + lostRevenue + potentialRevenue;
+  const winRatePct = (realizedRevenue + lostRevenue) > 0
+    ? Math.round((realizedRevenue / (realizedRevenue + lostRevenue)) * 100)
+    : 0;
+
   // deals timeline: 20 buckets x 30s = last 10 minutes
   const BUCKET_SIZE = 30_000;
   const N_BUCKETS = 20;
@@ -250,13 +273,17 @@ function snapshot() {
     const bStart = nowMs - (i + 1) * BUCKET_SIZE;
     const bEnd = nowMs - i * BUCKET_SIZE;
     const inB = finished.filter(c => c.finishedAt >= bStart && c.finishedAt < bEnd);
+    const dealsInB = inB.filter(c => c.result === 'deal');
+    const lostInB = inB.filter(c => c.result === 'lost');
     timeline.push({
       t: bEnd,
       label: new Date(bEnd).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }),
-      deal: inB.filter(c => c.result === 'deal').length,
-      lost: inB.filter(c => c.result === 'lost').length,
+      deal: dealsInB.length,
+      lost: lostInB.length,
       followup: inB.filter(c => c.result === 'followup').length,
       total: inB.length,
+      revenueDeal: dealsInB.reduce((s, c) => s + (c.dealValue || 0), 0),
+      revenueLost: lostInB.reduce((s, c) => s + (c.dealValue || 0), 0),
     });
   }
 
@@ -290,6 +317,13 @@ function snapshot() {
       neutral,
       unsatisfied,
       maxLoad: MAX_LOAD,
+      realizedRevenue,
+      potentialRevenue,
+      lostRevenue,
+      followupRevenue,
+      pipelineRevenue,
+      totalConsideredRevenue,
+      winRatePct,
     },
   };
 }

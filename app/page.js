@@ -20,6 +20,7 @@ import {
   Clock, Users, Activity, Trophy, XCircle, Phone, Pause, PlayCircle,
   MessageCircle, Send, Zap, Star, TrendingUp, Award, Radio,
   ArrowRight, Smile, Meh, Frown, BarChart3, Heart,
+  Wallet, TrendingDown, Banknote, Target,
 } from 'lucide-react';
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
@@ -47,6 +48,14 @@ const formatMs = (ms) => {
   if (!ms || ms <= 0) return '—';
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
+};
+
+const formatIDR = (n) => {
+  if (!n || n <= 0) return 'Rp 0';
+  if (n >= 1_000_000_000) return `Rp ${(n / 1_000_000_000).toFixed(2)}M`;
+  if (n >= 1_000_000) return `Rp ${(n / 1_000_000).toFixed(1)}jt`;
+  if (n >= 1000) return `Rp ${(n / 1000).toFixed(0)}rb`;
+  return `Rp ${n}`;
 };
 
 const MOOD_META = {
@@ -314,6 +323,54 @@ const App = () => {
             bg="bg-yellow-50"
           />
         </div>
+
+        {/* Revenue Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+          <RevenueCard
+            icon={Banknote}
+            label="Realized Revenue"
+            value={formatIDR(stats.realizedRevenue)}
+            sub={`${stats.deal || 0} deals closed`}
+            color="emerald"
+          />
+          <RevenueCard
+            icon={Target}
+            label="Potential Revenue"
+            value={formatIDR(stats.potentialRevenue)}
+            sub={`Pipeline: ${formatIDR(stats.pipelineRevenue)} • FU: ${formatIDR(stats.followupRevenue)}`}
+            color="blue"
+          />
+          <RevenueCard
+            icon={TrendingDown}
+            label="Lost Revenue"
+            value={formatIDR(stats.lostRevenue)}
+            sub={`${stats.lost || 0} deals lost`}
+            color="rose"
+          />
+          <RevenueCard
+            icon={Trophy}
+            label="Win Rate"
+            value={`${stats.winRatePct || 0}%`}
+            sub={`vs ${100 - (stats.winRatePct || 0)}% lost`}
+            color="amber"
+          />
+        </div>
+
+        {/* Revenue Funnel */}
+        <Card className="mb-6 shadow-sm">
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Wallet className="h-4 w-4 text-emerald-500" />
+              Revenue Funnel
+              <span className="text-xs font-normal text-muted-foreground">
+                Total considered: {formatIDR(stats.totalConsideredRevenue)}
+              </span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RevenueFunnel stats={stats} />
+          </CardContent>
+        </Card>
 
         {/* Sentiment + Timeline Chart */}
         <div className="grid lg:grid-cols-3 gap-4 mb-6">
@@ -1145,6 +1202,90 @@ const HistoryTable = ({ history, sales, filterResult, filterSales, filterRating,
           Menampilkan 50 dari {filtered.length} hasil
         </p>
       )}
+    </div>
+  );
+};
+
+const RevenueCard = ({ icon: Icon, label, value, sub, color }) => {
+  const colorMap = {
+    emerald: { bg: 'bg-emerald-50', text: 'text-emerald-600', border: 'border-emerald-200', accent: 'bg-emerald-500' },
+    blue: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200', accent: 'bg-blue-500' },
+    rose: { bg: 'bg-rose-50', text: 'text-rose-600', border: 'border-rose-200', accent: 'bg-rose-500' },
+    amber: { bg: 'bg-amber-50', text: 'text-amber-600', border: 'border-amber-200', accent: 'bg-amber-500' },
+  };
+  const c = colorMap[color] || colorMap.emerald;
+  return (
+    <Card className={`shadow-sm border-l-4 ${c.border}`} style={{ borderLeftColor: '' }}>
+      <CardContent className="p-4">
+        <div className="flex items-center justify-between mb-2">
+          <div className="text-xs text-muted-foreground uppercase tracking-wide font-medium">{label}</div>
+          <div className={`h-9 w-9 rounded-lg ${c.bg} flex items-center justify-center`}>
+            <Icon className={`h-5 w-5 ${c.text}`} />
+          </div>
+        </div>
+        <div className={`text-2xl font-bold ${c.text}`}>{value}</div>
+        {sub && <div className="text-[10px] text-muted-foreground mt-1 truncate" title={sub}>{sub}</div>}
+      </CardContent>
+    </Card>
+  );
+};
+
+const RevenueFunnel = ({ stats }) => {
+  const realized = stats.realizedRevenue || 0;
+  const potential = stats.potentialRevenue || 0;
+  const lost = stats.lostRevenue || 0;
+  const total = realized + potential + lost;
+
+  if (total === 0) {
+    return <div className="text-center py-6 text-xs text-muted-foreground">Belum ada data revenue.</div>;
+  }
+
+  const rPct = (realized / total) * 100;
+  const pPct = (potential / total) * 100;
+  const lPct = (lost / total) * 100;
+
+  const rows = [
+    { label: 'Realized', icon: '✓', amount: realized, pct: rPct, bg: 'bg-emerald-500', tint: 'bg-emerald-50', text: 'text-emerald-700', count: stats.deal || 0 },
+    { label: 'Potential', icon: '◷', amount: potential, pct: pPct, bg: 'bg-blue-500', tint: 'bg-blue-50', text: 'text-blue-700', count: '—' },
+    { label: 'Lost', icon: '✗', amount: lost, pct: lPct, bg: 'bg-rose-500', tint: 'bg-rose-50', text: 'text-rose-700', count: stats.lost || 0 },
+  ];
+
+  return (
+    <div className="space-y-3">
+      {/* Stacked bar overview */}
+      <div className="h-6 rounded-lg overflow-hidden flex bg-slate-100 shadow-inner">
+        <div className="bg-emerald-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all" style={{ width: `${rPct}%` }}>
+          {rPct >= 8 && `${Math.round(rPct)}%`}
+        </div>
+        <div className="bg-blue-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all" style={{ width: `${pPct}%` }}>
+          {pPct >= 8 && `${Math.round(pPct)}%`}
+        </div>
+        <div className="bg-rose-500 h-full flex items-center justify-center text-[10px] font-bold text-white transition-all" style={{ width: `${lPct}%` }}>
+          {lPct >= 8 && `${Math.round(lPct)}%`}
+        </div>
+      </div>
+
+      {/* Detailed rows */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+        {rows.map((r) => (
+          <div key={r.label} className={`p-3 rounded-lg border ${r.tint}`}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className={`h-6 w-6 rounded ${r.bg} text-white flex items-center justify-center text-xs font-bold`}>
+                  {r.icon}
+                </div>
+                <span className={`text-xs font-semibold ${r.text}`}>{r.label}</span>
+              </div>
+              <span className="text-xs font-medium text-muted-foreground">{Math.round(r.pct)}%</span>
+            </div>
+            <div className={`text-lg font-bold ${r.text}`}>{formatIDR(r.amount)}</div>
+            <div className="h-1 bg-white rounded-full mt-2 overflow-hidden">
+              <div className={`h-full ${r.bg} transition-all`} style={{ width: `${r.pct}%` }} />
+            </div>
+            <div className="text-[10px] text-muted-foreground mt-1">{r.count} {r.label === 'Potential' ? 'in pipeline' : 'customers'}</div>
+          </div>
+        ))}
+      </div>
     </div>
   );
 };

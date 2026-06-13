@@ -18,6 +18,7 @@ import {
 import {
   UserPlus, Play, CheckCircle2, RotateCcw, Sparkles, Crown,
   Clock, Users, Activity, Trophy, XCircle, Phone, Pause, PlayCircle,
+  MessageCircle, Send, Zap,
 } from 'lucide-react';
 
 const api = async (path, opts = {}) => {
@@ -62,6 +63,9 @@ const App = () => {
   const [finishSales, setFinishSales] = useState(null);
   const [finishResult, setFinishResult] = useState('deal');
   const [autoGen, setAutoGen] = useState(true);
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatSalesId, setChatSalesId] = useState(null);
+  const [chatInput, setChatInput] = useState('');
 
   const refresh = useCallback(async () => {
     const d = await api('/status');
@@ -131,7 +135,29 @@ const App = () => {
     setDetailOpen(true);
   };
 
+  const openChat = (salesId) => {
+    setChatSalesId(salesId);
+    setChatInput('');
+    setChatOpen(true);
+  };
+
+  const sendChat = async () => {
+    if (!chatSalesId) return;
+    const text = chatInput.trim();
+    await api('/chat/send', { method: 'POST', body: JSON.stringify({ salesId: chatSalesId, text }) });
+    setChatInput('');
+    refresh();
+  };
+
+  const quickChat = async () => {
+    if (!chatSalesId) return;
+    await api('/chat/quick', { method: 'POST', body: JSON.stringify({ salesId: chatSalesId }) });
+    refresh();
+  };
+
   const { queue, sales, stats, history } = data;
+  const chatSales = sales.find(s => s.id === chatSalesId) || null;
+  const chatCustomer = chatSales?.currentCustomer || null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -286,6 +312,7 @@ const App = () => {
                     queueEmpty={queue.length === 0}
                     onStart={() => startService(s.id)}
                     onFinish={() => openFinish(s)}
+                    onChat={() => openChat(s.id)}
                     onCustomerClick={openDetail}
                   />
                 ))}
@@ -369,6 +396,72 @@ const App = () => {
                 </span>
               } />
             </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Chat Dialog */}
+      <Dialog open={chatOpen} onOpenChange={setChatOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageCircle className="h-5 w-5 text-blue-500" />
+              Chat: {chatSales?.name}
+              {chatCustomer && (
+                <span className="text-sm font-normal text-muted-foreground">
+                  ↔ {chatCustomer.type === 'premium' ? '👑' : '🙂'} {chatCustomer.name}
+                </span>
+              )}
+            </DialogTitle>
+          </DialogHeader>
+          {chatCustomer ? (
+            <>
+              <div className="text-xs text-muted-foreground -mt-2 flex items-center gap-1">
+                Mood: <Badge variant="secondary" className={MOOD_META[chatCustomer.mood]?.cls}>
+                  {MOOD_META[chatCustomer.mood]?.emoji} {chatCustomer.mood}
+                </Badge>
+              </div>
+              <div className="h-80 overflow-y-auto bg-slate-50 rounded-lg p-3 space-y-2 border">
+                {(chatCustomer.chat || []).length === 0 && (
+                  <p className="text-center text-xs text-muted-foreground py-8">Belum ada percakapan</p>
+                )}
+                {(chatCustomer.chat || []).map((m) => (
+                  <div key={m.id} className={`flex ${m.from === 'sales' ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[75%] rounded-2xl px-3 py-2 text-sm ${
+                      m.from === 'sales'
+                        ? 'bg-blue-500 text-white rounded-br-sm'
+                        : 'bg-white border rounded-bl-sm'
+                    }`}>
+                      <div className={`text-[10px] mb-0.5 ${m.from === 'sales' ? 'text-blue-100' : 'text-muted-foreground'}`}>
+                        {m.author}
+                      </div>
+                      <div>{m.text}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="flex gap-2">
+                <Input
+                  placeholder="Ketik pesan sebagai sales..."
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && sendChat()}
+                />
+                <Button size="icon" onClick={sendChat} disabled={!chatInput.trim()} className="bg-blue-500 hover:bg-blue-600">
+                  <Send className="h-4 w-4" />
+                </Button>
+                <Button size="icon" variant="outline" onClick={quickChat} title="Quick reply (auto)">
+                  <Zap className="h-4 w-4 text-amber-500" />
+                </Button>
+              </div>
+              <p className="text-[10px] text-muted-foreground -mt-2">
+                💡 Tekan ⚡ untuk auto-reply. Customer akan otomatis membalas sesuai mood-nya.
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              Sales belum melayani siapa pun.
+            </p>
           )}
         </DialogContent>
       </Dialog>
@@ -457,11 +550,12 @@ const FinishOption = ({ value, current, icon: Icon, label, color }) => {
   );
 };
 
-const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onCustomerClick }) => {
+const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onChat, onCustomerClick }) => {
   const c = sales.currentCustomer;
   const isBusy = !!c;
   const dur = sales.startedAt ? now - sales.startedAt : 0;
   const mm = c ? MOOD_META[c.mood] || {} : {};
+  const chatCount = c?.chat?.length || 0;
 
   return (
     <div className={`rounded-xl border-2 p-4 transition-all ${
@@ -517,9 +611,19 @@ const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onCustomerClick 
           <Play className="h-3.5 w-3.5 mr-1" /> Start Customer
         </Button>
       ) : (
-        <Button size="sm" className="w-full bg-slate-900 hover:bg-slate-800" onClick={onFinish}>
-          <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Finish
-        </Button>
+        <div className="grid grid-cols-2 gap-2">
+          <Button size="sm" variant="outline" onClick={onChat} className="relative">
+            <MessageCircle className="h-3.5 w-3.5 mr-1" /> Chat
+            {chatCount > 0 && (
+              <span className="ml-1 bg-blue-500 text-white text-[10px] rounded-full px-1.5 py-0.5">
+                {chatCount}
+              </span>
+            )}
+          </Button>
+          <Button size="sm" className="bg-slate-900 hover:bg-slate-800" onClick={onFinish}>
+            <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Finish
+          </Button>
+        </div>
       )}
     </div>
   );

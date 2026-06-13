@@ -24,6 +24,59 @@ const NAMES = [
 ];
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+const CHAT_TEMPLATES = {
+  'Easy Deal': {
+    opener: [
+      'Halo, saya tertarik dengan produknya!',
+      'Hai kak, mau lihat-lihat dulu ya 😊',
+      'Selamat siang, langsung ke produk unggulannya aja',
+    ],
+    reply: [
+      'Oke siap, lanjut!',
+      'Wah menarik nih',
+      'Setuju, bisa langsung diproses',
+      'Mantap, saya ambil yang itu',
+      'Oke, bagaimana cara bayarnya?',
+    ],
+  },
+  'Negotiator': {
+    opener: [
+      'Bisa kasih diskon nggak nih? 💸',
+      'Harga di tempat lain lebih murah lho kak',
+      'Kalau saya ambil 2, dapat potongan berapa?',
+    ],
+    reply: [
+      'Hmm masih kemahalan menurut saya',
+      'Bisa turun lagi nggak harganya?',
+      'Tambahin bonus dong biar deal',
+      'Coba saya pikir-pikir dulu deh',
+      'Kalau cash bisa diskon berapa?',
+    ],
+  },
+  'Many Questions': {
+    opener: [
+      'Spesifikasi lengkapnya apa aja ya? ❓',
+      'Garansinya berapa lama kak?',
+      'Bedanya sama produk sebelah apa?',
+    ],
+    reply: [
+      'Oh gitu, terus warnanya ada apa aja?',
+      'Tahan banting nggak ini?',
+      'Kalau rusak, service-nya di mana?',
+      'Sertifikatnya resmi kan ya?',
+      'Hmm pertanyaan lagi, sabar ya kak 😅',
+    ],
+  },
+};
+
+const SALES_REPLIES = [
+  'Tentu kak, saya bantu jelaskan',
+  'Boleh saya cek dulu sebentar ya',
+  'Untuk produk ini ada penawaran spesial',
+  'Siap kak, sudah saya catat',
+  'Bisa kak, untuk Anda kami kasih harga terbaik',
+];
+
 function makeCustomer({ name, type, mood }) {
   return {
     id: store.nextCustomerId++,
@@ -36,6 +89,7 @@ function makeCustomer({ name, type, mood }) {
     servedBy: null,
     startedAt: null,
     finishedAt: null,
+    chat: [],
   };
 }
 
@@ -82,7 +136,39 @@ function assignNextToSales(sales) {
   next.startedAt = Date.now();
   sales.currentCustomerId = next.id;
   sales.startedAt = Date.now();
+
+  // Seed initial chat: sales greeting + customer opener (mood-based)
+  if (!next.chat) next.chat = [];
+  if (next.chat.length === 0) {
+    const tpl = CHAT_TEMPLATES[next.mood] || CHAT_TEMPLATES['Easy Deal'];
+    next.chat.push({
+      id: Date.now(),
+      from: 'sales',
+      author: sales.name,
+      text: `Halo ${next.name}, selamat datang! Ada yang bisa saya bantu?`,
+      ts: Date.now(),
+    });
+    next.chat.push({
+      id: Date.now() + 1,
+      from: 'customer',
+      author: next.name,
+      text: pick(tpl.opener),
+      ts: Date.now() + 50,
+    });
+  }
   return next;
+}
+
+// Auto-assign: keep assigning queue to any available sales
+function tryAutoAssign() {
+  const assignments = [];
+  for (const s of store.sales) {
+    if (s.currentCustomerId) continue;
+    const next = assignNextToSales(s);
+    if (next) assignments.push({ salesId: s.id, customer: next });
+    else break;
+  }
+  return assignments;
 }
 
 async function handle(request, { params }) {
@@ -107,6 +193,7 @@ async function handle(request, { params }) {
       }
       const customer = makeCustomer({ name: name.trim(), type, mood });
       store.customers.push(customer);
+      tryAutoAssign();
       return NextResponse.json({ customer, snapshot: snapshot() }, { status: 201 });
     }
 
@@ -141,6 +228,7 @@ async function handle(request, { params }) {
       }
       sales.currentCustomerId = null;
       sales.startedAt = null;
+      tryAutoAssign();
       return NextResponse.json({ salesId, finishedCustomer: customer, snapshot: snapshot() });
     }
 
@@ -153,6 +241,7 @@ async function handle(request, { params }) {
         { name: 'Ina Maulida', type: 'premium', mood: 'Negotiator' },
       ];
       samples.forEach(s => store.customers.push(makeCustomer(s)));
+      tryAutoAssign();
       return NextResponse.json({ ok: true, snapshot: snapshot() });
     }
 
@@ -165,7 +254,62 @@ async function handle(request, { params }) {
       while (nm === last && tries++ < 5) nm = pick(NAMES);
       const customer = makeCustomer({ name: nm });
       store.customers.push(customer);
+      tryAutoAssign();
       return NextResponse.json({ customer, snapshot: snapshot() });
+    }
+
+    // CHAT: sales sends a message; customer auto-replies based on mood
+    if (path === '/chat/send' && method === 'POST') {
+      const { salesId, text } = body;
+      const sales = store.sales.find(s => s.id === salesId);
+      if (!sales || !sales.currentCustomerId) {
+        return NextResponse.json({ error: 'Sales tidak melayani siapa pun' }, { status: 400 });
+      }
+      const customer = store.customers.find(c => c.id === sales.currentCustomerId);
+      if (!customer) return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
+      if (!customer.chat) customer.chat = [];
+
+      const trimmed = (text || '').trim();
+      const salesText = trimmed || pick(SALES_REPLIES);
+      const now = Date.now();
+      customer.chat.push({
+        id: now,
+        from: 'sales',
+        author: sales.name,
+        text: salesText,
+        ts: now,
+      });
+      // auto reply from customer based on mood
+      const tpl = CHAT_TEMPLATES[customer.mood] || CHAT_TEMPLATES['Easy Deal'];
+      customer.chat.push({
+        id: now + 1,
+        from: 'customer',
+        author: customer.name,
+        text: pick(tpl.reply),
+        ts: now + 100,
+      });
+      return NextResponse.json({ ok: true, chat: customer.chat });
+    }
+
+    // Quick-send: just trigger a sales auto-message (button on the chat UI)
+    if (path === '/chat/quick' && method === 'POST') {
+      const { salesId } = body;
+      const sales = store.sales.find(s => s.id === salesId);
+      if (!sales || !sales.currentCustomerId) {
+        return NextResponse.json({ error: 'Sales tidak melayani siapa pun' }, { status: 400 });
+      }
+      const customer = store.customers.find(c => c.id === sales.currentCustomerId);
+      if (!customer) return NextResponse.json({ error: 'Customer tidak ditemukan' }, { status: 404 });
+      if (!customer.chat) customer.chat = [];
+      const now = Date.now();
+      customer.chat.push({
+        id: now, from: 'sales', author: sales.name, text: pick(SALES_REPLIES), ts: now,
+      });
+      const tpl = CHAT_TEMPLATES[customer.mood] || CHAT_TEMPLATES['Easy Deal'];
+      customer.chat.push({
+        id: now + 1, from: 'customer', author: customer.name, text: pick(tpl.reply), ts: now + 100,
+      });
+      return NextResponse.json({ ok: true, chat: customer.chat });
     }
 
     if (path === '/demo/reset' && method === 'POST') {

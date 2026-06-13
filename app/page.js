@@ -19,7 +19,11 @@ import {
   UserPlus, Play, CheckCircle2, RotateCcw, Sparkles, Crown,
   Clock, Users, Activity, Trophy, XCircle, Phone, Pause, PlayCircle,
   MessageCircle, Send, Zap, Star, TrendingUp, Award, Radio,
+  ArrowRight, Smile, Meh, Frown, BarChart3, Heart,
 } from 'lucide-react';
+import {
+  DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuLabel, DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 
 const api = async (path, opts = {}) => {
   const res = await fetch(`/api${path}`, {
@@ -50,8 +54,8 @@ const RESULT_META = {
 
 const App = () => {
   const [data, setData] = useState({
-    queue: [], sales: [], customers: [], history: [], activity: [],
-    stats: { waiting: 0, serving: 0, finished: 0, deal: 0, lost: 0, followup: 0, avgRating: 0, ratingCount: 0 },
+    queue: [], sales: [], customers: [], history: [], activity: [], timeline: [],
+    stats: { waiting: 0, serving: 0, finished: 0, deal: 0, lost: 0, followup: 0, avgRating: 0, ratingCount: 0, satisfied: 0, neutral: 0, unsatisfied: 0 },
   });
   const [now, setNow] = useState(Date.now());
   const [addOpen, setAddOpen] = useState(false);
@@ -66,6 +70,7 @@ const App = () => {
   const [autoChat, setAutoChat] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatSalesId, setChatSalesId] = useState(null);
+  const [chatCustomerId, setChatCustomerId] = useState(null);
   const [chatInput, setChatInput] = useState('');
 
   const refresh = useCallback(async () => {
@@ -113,21 +118,27 @@ const App = () => {
     refresh();
   };
 
-  const startService = async (salesId) => {
-    await api('/service/start', { method: 'POST', body: JSON.stringify({ salesId }) });
+  const startService = async (salesId, customerId) => {
+    await api('/service/start', { method: 'POST', body: JSON.stringify({ salesId, customerId }) });
     refresh();
   };
 
-  const openFinish = (sales) => {
-    setFinishSales(sales);
+  const manualAssign = async (salesId, customerId) => {
+    await api('/assign', { method: 'POST', body: JSON.stringify({ salesId, customerId }) });
+    refresh();
+  };
+
+  const openFinish = (sales, customer) => {
+    setFinishSales({ ...sales, _targetCustomer: customer });
     setFinishResult('deal');
     setFinishOpen(true);
   };
 
   const confirmFinish = async () => {
+    const target = finishSales?._targetCustomer;
     await api('/service/finish', {
       method: 'POST',
-      body: JSON.stringify({ salesId: finishSales.id, result: finishResult }),
+      body: JSON.stringify({ salesId: finishSales.id, customerId: target?.id, result: finishResult }),
     });
     setFinishOpen(false);
     setFinishSales(null);
@@ -159,29 +170,36 @@ const App = () => {
     refresh();
   };
 
-  const openChat = (salesId) => {
+  const openChat = (salesId, customerId) => {
     setChatSalesId(salesId);
+    setChatCustomerId(customerId);
     setChatInput('');
     setChatOpen(true);
   };
 
   const sendChat = async () => {
-    if (!chatSalesId) return;
+    if (!chatSalesId || !chatCustomerId) return;
     const text = chatInput.trim();
-    await api('/chat/send', { method: 'POST', body: JSON.stringify({ salesId: chatSalesId, text }) });
+    await api('/chat/send', {
+      method: 'POST',
+      body: JSON.stringify({ salesId: chatSalesId, customerId: chatCustomerId, text }),
+    });
     setChatInput('');
     refresh();
   };
 
   const quickChat = async () => {
-    if (!chatSalesId) return;
-    await api('/chat/quick', { method: 'POST', body: JSON.stringify({ salesId: chatSalesId }) });
+    if (!chatSalesId || !chatCustomerId) return;
+    await api('/chat/quick', {
+      method: 'POST',
+      body: JSON.stringify({ salesId: chatSalesId, customerId: chatCustomerId }),
+    });
     refresh();
   };
 
-  const { queue, sales, stats, history } = data;
+  const { queue, sales, stats, history, timeline } = data;
   const chatSales = sales.find(s => s.id === chatSalesId) || null;
-  const chatCustomer = chatSales?.currentCustomer || null;
+  const chatCustomer = chatSales?.currentCustomers?.find(c => c.id === chatCustomerId) || null;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-100">
@@ -280,6 +298,28 @@ const App = () => {
           />
         </div>
 
+        {/* Sentiment + Timeline Chart */}
+        <div className="grid lg:grid-cols-3 gap-4 mb-6">
+          <SentimentCard stats={stats} />
+          <Card className="lg:col-span-2 shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-base">
+                <BarChart3 className="h-4 w-4 text-blue-500" />
+                Deals Timeline
+                <span className="text-xs font-normal text-muted-foreground">(last 10 min, 30s buckets)</span>
+                <div className="ml-auto flex items-center gap-3 text-[10px]">
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-emerald-500" /> Deal</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-rose-500" /> Lost</span>
+                  <span className="flex items-center gap-1"><span className="h-2 w-2 rounded-sm bg-blue-500" /> Follow Up</span>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <DealsTimeline timeline={timeline} />
+            </CardContent>
+          </Card>
+        </div>
+
         <div className="grid lg:grid-cols-5 gap-6">
           {/* Queue */}
           <Card className="lg:col-span-2 shadow-sm">
@@ -299,36 +339,71 @@ const App = () => {
                   {queue.map((c, idx) => {
                     const mm = MOOD_META[c.mood] || {};
                     return (
-                      <button
+                      <div
                         key={c.id}
-                        onClick={() => openDetail(c)}
-                        className={`w-full text-left p-3 rounded-lg border flex items-center justify-between transition-all hover:shadow-md ${
+                        className={`group p-3 rounded-lg border flex items-center justify-between transition-all hover:shadow-md ${
                           c.type === 'premium'
                             ? 'bg-gradient-to-r from-amber-50 to-yellow-50 border-amber-200'
                             : 'bg-slate-50 border-slate-200'
                         }`}
                       >
-                        <div className="flex items-center gap-3">
-                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                        <button
+                          onClick={() => openDetail(c)}
+                          className="flex items-center gap-3 text-left flex-1 min-w-0"
+                        >
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0 ${
                             c.type === 'premium' ? 'bg-amber-500 text-white' : 'bg-slate-300 text-slate-700'
                           }`}>
                             {idx + 1}
                           </div>
-                          <div>
-                            <div className="font-medium text-sm flex items-center gap-1">
+                          <div className="min-w-0">
+                            <div className="font-medium text-sm flex items-center gap-1 truncate">
                               {c.type === 'premium' ? '👑' : '🙂'} {c.name}
                             </div>
-                            <div className="text-xs text-muted-foreground flex items-center gap-2">
+                            <div className="text-xs text-muted-foreground flex items-center gap-2 truncate">
                               <span>{c.type === 'premium' ? 'Premium' : 'Normal'}</span>
                               <span>•</span>
                               <span>{mm.emoji} {c.mood}</span>
                             </div>
                           </div>
+                        </button>
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                          <span className="text-xs text-muted-foreground font-mono mr-1">
+                            {formatDuration(now - c.createdAt)}
+                          </span>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="h-7 px-2 text-xs opacity-70 group-hover:opacity-100"
+                              >
+                                <ArrowRight className="h-3 w-3 mr-1" /> Assign
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end" className="w-56">
+                              <DropdownMenuLabel className="text-xs">Pilih Sales untuk {c.name}</DropdownMenuLabel>
+                              <DropdownMenuSeparator />
+                              {sales.map((s) => {
+                                const full = s.load >= s.capacity;
+                                return (
+                                  <DropdownMenuItem
+                                    key={s.id}
+                                    disabled={full}
+                                    onClick={() => manualAssign(s.id, c.id)}
+                                    className="text-xs"
+                                  >
+                                    <span className="font-medium">{s.name}</span>
+                                    <span className={`ml-auto text-[10px] ${full ? 'text-rose-500' : 'text-emerald-600'}`}>
+                                      {s.load}/{s.capacity} {full ? '(full)' : ''}
+                                    </span>
+                                  </DropdownMenuItem>
+                                );
+                              })}
+                            </DropdownMenuContent>
+                          </DropdownMenu>
                         </div>
-                        <div className="text-xs text-muted-foreground font-mono">
-                          {formatDuration(now - c.createdAt)}
-                        </div>
-                      </button>
+                      </div>
                     );
                   })}
                 </div>
@@ -355,9 +430,10 @@ const App = () => {
                     now={now}
                     queueEmpty={queue.length === 0}
                     onStart={() => startService(s.id)}
-                    onFinish={() => openFinish(s)}
-                    onChat={() => openChat(s.id)}
+                    onFinish={(c) => openFinish(s, c)}
+                    onChat={(c) => openChat(s.id, c.id)}
                     onCustomerClick={openDetail}
+                    onRemove={() => removeSales(s.id)}
                   />
                 ))}
               </div>
@@ -778,81 +854,216 @@ const FinishOption = ({ value, current, icon: Icon, label, color }) => {
   );
 };
 
-const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onChat, onCustomerClick }) => {
-  const c = sales.currentCustomer;
-  const isBusy = !!c;
-  const dur = sales.startedAt ? now - sales.startedAt : 0;
-  const mm = c ? MOOD_META[c.mood] || {} : {};
-  const chatCount = c?.chat?.length || 0;
+const SalesCard = ({ sales, now, queueEmpty, onStart, onFinish, onChat, onCustomerClick, onRemove }) => {
+  const customers = sales.currentCustomers || [];
+  const load = sales.load || 0;
+  const cap = sales.capacity || 3;
+  const isFull = load >= cap;
+  const isIdle = load === 0;
+  const loadPct = Math.round((load / cap) * 100);
+
+  const borderColor = isIdle
+    ? 'border-emerald-200 bg-emerald-50/30'
+    : isFull
+      ? 'border-rose-300 bg-rose-50/30'
+      : 'border-blue-300 bg-blue-50/40';
 
   return (
-    <div className={`rounded-xl border-2 p-4 transition-all ${
-      isBusy ? 'border-blue-300 bg-blue-50/40' : 'border-emerald-200 bg-emerald-50/30'
-    }`}>
+    <div className={`rounded-xl border-2 p-4 transition-all ${borderColor}`}>
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <div className={`h-10 w-10 rounded-full flex items-center justify-center font-bold text-white ${
-            isBusy ? 'bg-blue-500' : 'bg-emerald-500'
+            isIdle ? 'bg-emerald-500' : isFull ? 'bg-rose-500' : 'bg-blue-500'
           }`}>
             {sales.name.split(' ').pop()[0]}
           </div>
           <div>
             <div className="font-semibold text-sm">{sales.name}</div>
             <div className="text-xs text-muted-foreground">
-              {isBusy ? 'Serving' : 'Available'}
+              {isIdle ? 'Idle' : isFull ? 'Full' : 'Serving'} • ⭐ {sales.stats?.avgRating || '—'}
             </div>
           </div>
         </div>
-        {isBusy && (
-          <div className="text-right">
-            <div className="text-xs text-muted-foreground">⏱</div>
-            <div className="font-mono text-sm font-semibold">{formatDuration(dur)}</div>
-          </div>
-        )}
+        <div className="text-right">
+          <div className="text-[10px] text-muted-foreground uppercase">Load</div>
+          <div className="font-mono text-sm font-semibold">{load}/{cap}</div>
+        </div>
       </div>
 
-      {c ? (
-        <button
-          onClick={() => onCustomerClick(c)}
-          className="w-full mb-3 p-3 rounded-lg bg-white border text-left hover:shadow transition-all"
-        >
-          <div className="flex items-center justify-between">
-            <div className="font-medium text-sm">
-              {c.type === 'premium' ? '👑' : '🙂'} {c.name}
-            </div>
-            <Badge variant="secondary" className={c.type === 'premium' ? 'bg-amber-100 text-amber-700' : ''}>
-              {c.type === 'premium' ? 'Premium' : 'Normal'}
-            </Badge>
-          </div>
-          <div className="mt-1 text-xs text-muted-foreground">
-            Mood: {mm.emoji} {c.mood}
-          </div>
-        </button>
-      ) : (
+      {/* Load bar */}
+      <div className="h-1.5 bg-slate-200 rounded-full overflow-hidden mb-3">
+        <div
+          className={`h-full transition-all ${
+            isFull ? 'bg-rose-500' : load > 0 ? 'bg-blue-500' : 'bg-slate-300'
+          }`}
+          style={{ width: `${loadPct}%` }}
+        />
+      </div>
+
+      {customers.length === 0 ? (
         <div className="mb-3 p-3 rounded-lg bg-white/50 border border-dashed text-center text-xs text-muted-foreground">
           Tidak ada pelanggan
         </div>
-      )}
-
-      {!isBusy ? (
-        <Button size="sm" className="w-full bg-emerald-600 hover:bg-emerald-700" onClick={onStart} disabled={queueEmpty}>
-          <Play className="h-3.5 w-3.5 mr-1" /> Start Customer
-        </Button>
       ) : (
-        <div className="grid grid-cols-2 gap-2">
-          <Button size="sm" variant="outline" onClick={onChat} className="relative">
-            <MessageCircle className="h-3.5 w-3.5 mr-1" /> Chat
-            {chatCount > 0 && (
-              <span className="ml-1 bg-blue-500 text-white text-[10px] rounded-full px-1.5 py-0.5">
-                {chatCount}
-              </span>
-            )}
-          </Button>
-          <Button size="sm" className="bg-slate-900 hover:bg-slate-800" onClick={onFinish}>
-            <CheckCircle2 className="h-3.5 w-3.5 mr-1" /> Finish
-          </Button>
+        <div className="space-y-2 mb-3">
+          {customers.map((c) => {
+            const mm = MOOD_META[c.mood] || {};
+            const startedAt = sales.startedAtMap?.[c.id] || c.startedAt;
+            const dur = startedAt ? now - startedAt : 0;
+            const chatCount = c.chat?.length || 0;
+            return (
+              <div key={c.id} className="p-2 rounded-lg bg-white border">
+                <button
+                  onClick={() => onCustomerClick(c)}
+                  className="w-full text-left"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="font-medium text-xs truncate">
+                      {c.type === 'premium' ? '👑' : '🙂'} {c.name}
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className="font-mono text-[10px] text-muted-foreground">{formatDuration(dur)}</span>
+                    </div>
+                  </div>
+                  <div className="text-[10px] text-muted-foreground mt-0.5">
+                    {mm.emoji} {c.mood} • {chatCount} msg
+                  </div>
+                </button>
+                <div className="grid grid-cols-2 gap-1 mt-1.5">
+                  <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => onChat(c)}>
+                    <MessageCircle className="h-3 w-3 mr-1" /> Chat
+                  </Button>
+                  <Button size="sm" className="h-7 text-xs bg-slate-900 hover:bg-slate-800" onClick={() => onFinish(c)}>
+                    <CheckCircle2 className="h-3 w-3 mr-1" /> Finish
+                  </Button>
+                </div>
+              </div>
+            );
+          })}
         </div>
       )}
+
+      <div className="grid grid-cols-2 gap-2">
+        <Button
+          size="sm"
+          variant="outline"
+          className="border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+          onClick={onStart}
+          disabled={queueEmpty || isFull}
+        >
+          <Play className="h-3.5 w-3.5 mr-1" /> Take Next
+        </Button>
+        <Button size="sm" variant="ghost" className="text-rose-500 hover:bg-rose-50" onClick={onRemove} disabled={!isIdle}>
+          <XCircle className="h-3.5 w-3.5 mr-1" /> Remove
+        </Button>
+      </div>
+    </div>
+  );
+};
+
+const SentimentCard = ({ stats }) => {
+  const total = (stats.satisfied || 0) + (stats.neutral || 0) + (stats.unsatisfied || 0);
+  const sPct = total ? Math.round((stats.satisfied / total) * 100) : 0;
+  const nPct = total ? Math.round((stats.neutral / total) * 100) : 0;
+  const uPct = total ? 100 - sPct - nPct : 0;
+  const score = stats.avgRating || 0;
+  const scoreColor = score >= 4 ? 'text-emerald-600' : score >= 3 ? 'text-amber-600' : score > 0 ? 'text-rose-600' : 'text-slate-400';
+
+  return (
+    <Card className="shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Heart className="h-4 w-4 text-rose-500 fill-rose-500" />
+          Sentimen Pelanggan
+        </CardTitle>
+      </CardHeader>
+      <CardContent>
+        <div className="flex items-baseline gap-2 mb-3">
+          <div className={`text-3xl font-bold ${scoreColor}`}>{score || '—'}</div>
+          <div className="text-xs text-muted-foreground">/ 5.0 dari {total} review</div>
+        </div>
+        {/* Combined progress bar */}
+        <div className="h-2.5 rounded-full overflow-hidden flex bg-slate-100 mb-3">
+          <div className="bg-emerald-500 h-full transition-all" style={{ width: `${sPct}%` }} title={`Puas ${sPct}%`} />
+          <div className="bg-amber-400 h-full transition-all" style={{ width: `${nPct}%` }} title={`Netral ${nPct}%`} />
+          <div className="bg-rose-500 h-full transition-all" style={{ width: `${uPct}%` }} title={`Tidak Puas ${uPct}%`} />
+        </div>
+        <div className="space-y-1.5">
+          <SentimentRow icon={Smile} color="emerald" label="Puas" desc="≥ 4 ⭐" count={stats.satisfied || 0} pct={sPct} />
+          <SentimentRow icon={Meh} color="amber" label="Netral" desc="3 - 4 ⭐" count={stats.neutral || 0} pct={nPct} />
+          <SentimentRow icon={Frown} color="rose" label="Tidak Puas" desc="< 3 ⭐" count={stats.unsatisfied || 0} pct={uPct} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+};
+
+const SentimentRow = ({ icon: Icon, color, label, desc, count, pct }) => {
+  const colorMap = {
+    emerald: 'text-emerald-600 bg-emerald-50',
+    amber: 'text-amber-600 bg-amber-50',
+    rose: 'text-rose-600 bg-rose-50',
+  };
+  return (
+    <div className="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50">
+      <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${colorMap[color]}`}>
+        <Icon className="h-4 w-4" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs font-medium">{label}</div>
+        <div className="text-[10px] text-muted-foreground">{desc}</div>
+      </div>
+      <div className="text-right">
+        <div className="text-sm font-bold">{count}</div>
+        <div className="text-[10px] text-muted-foreground">{pct}%</div>
+      </div>
+    </div>
+  );
+};
+
+const DealsTimeline = ({ timeline = [] }) => {
+  if (!timeline || timeline.length === 0) {
+    return <div className="h-32 flex items-center justify-center text-xs text-muted-foreground">Loading...</div>;
+  }
+  const maxVal = Math.max(1, ...timeline.map(b => b.total));
+  return (
+    <div>
+      <div className="flex items-end gap-[3px] h-32">
+        {timeline.map((b, i) => {
+          const totalH = b.total > 0 ? Math.max((b.total / maxVal) * 100, 5) : 0;
+          const fuPct = b.total ? (b.followup / b.total) * 100 : 0;
+          const lostPct = b.total ? (b.lost / b.total) * 100 : 0;
+          const dealPct = b.total ? (b.deal / b.total) * 100 : 0;
+          return (
+            <div
+              key={i}
+              className="flex-1 h-full flex flex-col justify-end group relative"
+              title={`${b.label} • Deal ${b.deal} • Lost ${b.lost} • FU ${b.followup}`}
+            >
+              <div className="absolute bottom-full mb-1 left-1/2 -translate-x-1/2 bg-slate-900 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-10">
+                {b.label}<br />
+                ✓ {b.deal} • ✗ {b.lost} • 📞 {b.followup}
+              </div>
+              {b.total === 0 ? (
+                <div className="h-[2px] bg-slate-200 rounded-sm" />
+              ) : (
+                <div
+                  className="bg-slate-50 rounded-t-sm overflow-hidden"
+                  style={{ height: `${totalH}%` }}
+                >
+                  <div className="bg-blue-500" style={{ height: `${fuPct}%` }} />
+                  <div className="bg-rose-500" style={{ height: `${lostPct}%` }} />
+                  <div className="bg-emerald-500" style={{ height: `${dealPct}%` }} />
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-between text-[10px] text-muted-foreground mt-2 px-1">
+        <span>{timeline[0]?.label || '—'}</span>
+        <span>now</span>
+      </div>
     </div>
   );
 };

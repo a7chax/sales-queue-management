@@ -222,6 +222,46 @@ function snapshot() {
   };
 }
 
+// Auto-conclude conversation when chat reaches max length
+function autoConclude(customer, sales) {
+  const bias = {
+    'Easy Deal': { deal: 0.7, followup: 0.2, lost: 0.1 },
+    'Negotiator': { deal: 0.35, followup: 0.30, lost: 0.35 },
+    'Many Questions': { deal: 0.30, followup: 0.45, lost: 0.25 },
+  }[customer.mood] || { deal: 0.5, followup: 0.3, lost: 0.2 };
+
+  const roll = Math.random();
+  let result;
+  if (roll < bias.deal) result = 'deal';
+  else if (roll < bias.deal + bias.followup) result = 'followup';
+  else result = 'lost';
+
+  const closeMsg = {
+    deal: ['Oke deal! Saya ambil. Terima kasih kak 🤝', 'Sip, saya beli sekarang!', 'Mantap, langsung proses ya'],
+    followup: ['Saya pikir-pikir dulu ya, nanti saya hubungi lagi 📞', 'Boleh saya cek dulu, follow up minggu depan', 'Mau diskusi sama keluarga dulu deh'],
+    lost: ['Maaf, saya cancel dulu. Mungkin lain kali.', 'Hmm tidak jadi deh, terima kasih', 'Saya mau bandingkan dulu sama yang lain'],
+  }[result];
+
+  if (customer.chat.length < 21) {
+    customer.chat.push({
+      id: Date.now() + Math.random(),
+      from: 'customer',
+      author: customer.name,
+      text: pick(closeMsg),
+      ts: Date.now(),
+    });
+  }
+
+  customer.status = 'finished';
+  customer.result = result;
+  customer.finishedAt = Date.now();
+  const r = generateRating(customer);
+  customer.rating = r.rating;
+  customer.feedback = r.feedback;
+  sales.currentCustomerId = null;
+  sales.startedAt = null;
+}
+
 function assignNextToSales(sales) {
   const queue = getQueue();
   if (queue.length === 0) return null;
@@ -359,18 +399,15 @@ async function handle(request, { params }) {
     // Auto-tick: advance ALL ongoing chats by one turn (alternating speakers)
     if (path === '/chat/tick' && method === 'POST') {
       const advances = [];
+      const concluded = [];
       for (const s of store.sales) {
         if (!s.currentCustomerId) continue;
         const customer = store.customers.find(c => c.id === s.currentCustomerId);
         if (!customer) continue;
         if (!customer.chat) customer.chat = [];
-        // Cap chat length so it doesn't grow forever (max 30 messages per session)
-        if (customer.chat.length >= 30) continue;
 
         const last = customer.chat[customer.chat.length - 1];
         const lastFrom = last?.from;
-        // Alternate: if last was sales, customer speaks next; vice versa.
-        // If empty, customer opens (sales already greeted at start).
         const from = lastFrom === 'sales' ? 'customer' : 'sales';
         const tpl = CHAT_TEMPLATES[customer.mood] || CHAT_TEMPLATES['Easy Deal'];
         const text = from === 'sales' ? pick(SALES_REPLIES) : pick(tpl.reply);
@@ -384,8 +421,16 @@ async function handle(request, { params }) {
           ts: now,
         });
         advances.push({ salesId: s.id, customerId: customer.id, from, text });
+
+        // Auto-conclude when chat hits 20 messages
+        if (customer.chat.length >= 20) {
+          autoConclude(customer, s);
+          concluded.push({ salesId: s.id, customerId: customer.id, result: customer.result });
+        }
       }
-      return NextResponse.json({ ok: true, advances, snapshot: snapshot() });
+      // Re-assign freed sales from queue
+      if (concluded.length > 0) tryAutoAssign();
+      return NextResponse.json({ ok: true, advances, concluded, snapshot: snapshot() });
     }
 
     // CHAT: sales sends a message; customer auto-replies based on mood
@@ -449,6 +494,36 @@ async function handle(request, { params }) {
         s.currentCustomerId = null;
         s.startedAt = null;
       });
+      return NextResponse.json({ ok: true, snapshot: snapshot() });
+    }
+
+    // Add new sales dynamically
+    if (path === '/sales/add' && method === 'POST') {
+      const { name } = body;
+      const id = (store.sales.at(-1)?.id || 0) + 1;
+      const letter = String.fromCharCode(64 + id);
+      store.sales.push({
+        id,
+        name: name || `Sales ${letter}`,
+        currentCustomerId: null,
+        startedAt: null,
+      });
+      tryAutoAssign();
+      return NextResponse.json({ ok: true, snapshot: snapshot() });
+    }
+
+    // Remove a sales (only if not busy)
+    if (path === '/sales/remove' && method === 'POST') {
+      const { salesId } = body;
+      const idx = store.sales.findIndex(s => s.id === salesId);
+      if (idx === -1) return NextResponse.json({ error: 'Sales tidak ditemukan' }, { status: 404 });
+      if (store.sales[idx].currentCustomerId) {
+        return NextResponse.json({ error: 'Sales sedang melayani, tidak bisa dihapus' }, { status: 400 });
+      }
+      if (store.sales.length <= 1) {
+        return NextResponse.json({ error: 'Minimal 1 sales' }, { status: 400 });
+      }
+      store.sales.splice(idx, 1);
       return NextResponse.json({ ok: true, snapshot: snapshot() });
     }
 

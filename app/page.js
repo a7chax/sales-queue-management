@@ -102,7 +102,7 @@ const App = () => {
         await api('/chat/tick', { method: 'POST' });
         refresh();
       }
-    }, 4000);
+    }, 2500);
     return () => clearInterval(i);
   }, [refresh]);
 
@@ -147,6 +147,16 @@ const App = () => {
   const openDetail = (customer) => {
     setDetailCustomer(customer);
     setDetailOpen(true);
+  };
+
+  const addSales = async () => {
+    await api('/sales/add', { method: 'POST', body: JSON.stringify({}) });
+    refresh();
+  };
+
+  const removeSales = async (salesId) => {
+    await api('/sales/remove', { method: 'POST', body: JSON.stringify({ salesId }) });
+    refresh();
   };
 
   const openChat = (salesId) => {
@@ -328,10 +338,13 @@ const App = () => {
 
           {/* Sales Panel */}
           <Card className="lg:col-span-3 shadow-sm">
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="flex items-center gap-2">
-                <Users className="h-5 w-5 text-blue-500" /> Sales Panel
+                <Users className="h-5 w-5 text-blue-500" /> Sales Panel ({sales.length})
               </CardTitle>
+              <Button size="sm" variant="outline" onClick={addSales}>
+                <UserPlus className="h-4 w-4 mr-1" /> Tambah Sales
+              </Button>
             </CardHeader>
             <CardContent>
               <div className="grid sm:grid-cols-2 gap-4">
@@ -474,6 +487,72 @@ const App = () => {
             </CardContent>
           </Card>
         </div>
+
+        {/* Testimonials Wall */}
+        <Card className="shadow-sm mt-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Star className="h-5 w-5 text-yellow-500 fill-yellow-400" />
+              Testimoni Customer
+              {(() => {
+                const positives = history.filter(c => (c.rating || 0) >= 4);
+                return <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-[10px]">
+                  {positives.length} positif
+                </Badge>;
+              })()}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {history.filter(c => c.feedback).length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-8">Belum ada testimoni.</p>
+            ) : (
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {history.filter(c => c.feedback).slice(0, 9).map((c) => {
+                  const salesName = sales.find(s => s.id === c.servedBy)?.name || 'Sales';
+                  const bgGrad = c.rating >= 4.5
+                    ? 'from-amber-50 to-yellow-50 border-amber-200'
+                    : c.rating >= 3.5
+                      ? 'from-blue-50 to-sky-50 border-blue-200'
+                      : c.rating >= 2.5
+                        ? 'from-slate-50 to-gray-50 border-slate-200'
+                        : 'from-rose-50 to-pink-50 border-rose-200';
+                  return (
+                    <div key={c.id} className={`rounded-xl border bg-gradient-to-br ${bgGrad} p-4 relative`}>
+                      <div className="absolute top-3 right-3 text-3xl opacity-20">"</div>
+                      <StarRating value={c.rating} size={14} />
+                      <p className="mt-2 text-sm italic text-slate-700 leading-relaxed">
+                        "{c.feedback}"
+                      </p>
+                      <div className="mt-3 pt-3 border-t border-white/60 flex items-center justify-between">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0 ${
+                            c.type === 'premium' ? 'bg-amber-500 text-white' : 'bg-slate-300 text-slate-700'
+                          }`}>
+                            {c.name.split(' ').map(n => n[0]).join('').slice(0, 2)}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold truncate">
+                              {c.type === 'premium' ? '👑' : '🙂'} {c.name}
+                            </div>
+                            <div className="text-[10px] text-muted-foreground truncate">
+                              Dilayani oleh {salesName}
+                            </div>
+                          </div>
+                        </div>
+                        <Badge
+                          variant="secondary"
+                          className={`text-[10px] flex-shrink-0 ${RESULT_META[c.result]?.bg} ${RESULT_META[c.result]?.cls}`}
+                        >
+                          {RESULT_META[c.result]?.label}
+                        </Badge>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
 
         <footer className="text-center text-xs text-muted-foreground mt-8 py-4">
           Built with Next.js • In-memory priority queue • Premium first • Auto-gen tiap 10 detik

@@ -18,7 +18,7 @@ import {
 import {
   UserPlus, Play, CheckCircle2, RotateCcw, Sparkles, Crown,
   Clock, Users, Activity, Trophy, XCircle, Phone, Pause, PlayCircle,
-  MessageCircle, Send, Zap,
+  MessageCircle, Send, Zap, Star, TrendingUp, Award, Radio,
 } from 'lucide-react';
 
 const api = async (path, opts = {}) => {
@@ -50,8 +50,8 @@ const RESULT_META = {
 
 const App = () => {
   const [data, setData] = useState({
-    queue: [], sales: [], customers: [], history: [],
-    stats: { waiting: 0, serving: 0, finished: 0, deal: 0, lost: 0, followup: 0 },
+    queue: [], sales: [], customers: [], history: [], activity: [],
+    stats: { waiting: 0, serving: 0, finished: 0, deal: 0, lost: 0, followup: 0, avgRating: 0, ratingCount: 0 },
   });
   const [now, setNow] = useState(Date.now());
   const [addOpen, setAddOpen] = useState(false);
@@ -63,6 +63,7 @@ const App = () => {
   const [finishSales, setFinishSales] = useState(null);
   const [finishResult, setFinishResult] = useState('deal');
   const [autoGen, setAutoGen] = useState(true);
+  const [autoChat, setAutoChat] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
   const [chatSalesId, setChatSalesId] = useState(null);
   const [chatInput, setChatInput] = useState('');
@@ -89,6 +90,19 @@ const App = () => {
         refresh();
       }
     }, 10000);
+    return () => clearInterval(i);
+  }, [refresh]);
+
+  // Auto-chat tick every ~4 seconds to advance ongoing conversations
+  const autoChatRef = useRef(autoChat);
+  autoChatRef.current = autoChat;
+  useEffect(() => {
+    const i = setInterval(async () => {
+      if (autoChatRef.current) {
+        await api('/chat/tick', { method: 'POST' });
+        refresh();
+      }
+    }, 4000);
     return () => clearInterval(i);
   }, [refresh]);
 
@@ -182,6 +196,15 @@ const App = () => {
               {autoGen ? <Pause className="h-4 w-4 mr-2" /> : <PlayCircle className="h-4 w-4 mr-2" />}
               Auto-Gen: {autoGen ? 'ON' : 'OFF'}
             </Button>
+            <Button
+              variant={autoChat ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => setAutoChat(!autoChat)}
+              className={autoChat ? 'bg-blue-600 hover:bg-blue-700' : ''}
+            >
+              <MessageCircle className="h-4 w-4 mr-2" />
+              Auto-Chat: {autoChat ? 'ON' : 'OFF'}
+            </Button>
             <Button variant="outline" size="sm" onClick={seed}>
               <Sparkles className="h-4 w-4 mr-2" /> Demo Data
             </Button>
@@ -231,12 +254,20 @@ const App = () => {
 
       <main className="container mx-auto px-6 py-8">
         {/* Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
           <StatCard icon={Clock} label="Waiting" value={stats.waiting} color="text-amber-600" bg="bg-amber-50" />
           <StatCard icon={Users} label="Serving" value={stats.serving} color="text-blue-600" bg="bg-blue-50" />
           <StatCard icon={CheckCircle2} label="Deal" value={stats.deal} color="text-emerald-600" bg="bg-emerald-50" />
           <StatCard icon={XCircle} label="Lost" value={stats.lost} color="text-rose-600" bg="bg-rose-50" />
           <StatCard icon={Phone} label="Follow Up" value={stats.followup} color="text-blue-600" bg="bg-blue-50" />
+          <StatCard
+            icon={Star}
+            label="Avg Rating"
+            value={stats.avgRating ? `${stats.avgRating} ⭐` : '—'}
+            sub={stats.ratingCount ? `${stats.ratingCount} reviews` : 'no reviews'}
+            color="text-yellow-600"
+            bg="bg-yellow-50"
+          />
         </div>
 
         <div className="grid lg:grid-cols-5 gap-6">
@@ -338,17 +369,27 @@ const App = () => {
                   const Icon = r.icon;
                   const dur = c.finishedAt && c.startedAt ? c.finishedAt - c.startedAt : 0;
                   return (
-                    <div key={c.id} className={`p-3 rounded-lg border flex items-center gap-3 ${r.bg}`}>
-                      <Icon className={`h-6 w-6 ${r.cls} flex-shrink-0`} />
-                      <div className="flex-1 min-w-0">
-                        <div className="font-medium text-sm truncate">
-                          {c.type === 'premium' ? '👑' : '🙂'} {c.name}
-                        </div>
-                        <div className="text-xs text-muted-foreground flex items-center gap-1">
-                          <span className={`font-semibold ${r.cls}`}>{r.label}</span>
-                          <span>• {formatDuration(dur)}</span>
+                    <div key={c.id} className={`p-3 rounded-lg border ${r.bg}`}>
+                      <div className="flex items-center gap-3">
+                        <Icon className={`h-6 w-6 ${r.cls} flex-shrink-0`} />
+                        <div className="flex-1 min-w-0">
+                          <div className="font-medium text-sm truncate">
+                            {c.type === 'premium' ? '👑' : '🙂'} {c.name}
+                          </div>
+                          <div className="text-xs text-muted-foreground flex items-center gap-1">
+                            <span className={`font-semibold ${r.cls}`}>{r.label}</span>
+                            <span>• {formatDuration(dur)}</span>
+                          </div>
                         </div>
                       </div>
+                      <div className="mt-2 flex items-center justify-between">
+                        <StarRating value={c.rating} />
+                      </div>
+                      {c.feedback && (
+                        <div className="mt-1 text-[11px] italic text-slate-600 truncate" title={c.feedback}>
+                          "{c.feedback}"
+                        </div>
+                      )}
                     </div>
                   );
                 })}
@@ -356,6 +397,83 @@ const App = () => {
             )}
           </CardContent>
         </Card>
+
+        {/* Sales Leaderboard + Live Activity */}
+        <div className="grid lg:grid-cols-2 gap-6 mt-6">
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Award className="h-5 w-5 text-amber-500" /> Sales Leaderboard
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {[...sales]
+                  .sort((a, b) => (b.stats?.avgRating || 0) - (a.stats?.avgRating || 0) || (b.stats?.deals || 0) - (a.stats?.deals || 0))
+                  .map((s, idx) => {
+                    const st = s.stats || {};
+                    const closeRate = st.served ? Math.round((st.deals / st.served) * 100) : 0;
+                    return (
+                      <div key={s.id} className="p-3 rounded-lg border bg-slate-50/50 flex items-center gap-3">
+                        <div className={`h-9 w-9 rounded-full flex items-center justify-center font-bold text-white ${
+                          idx === 0 ? 'bg-amber-500' : idx === 1 ? 'bg-slate-400' : idx === 2 ? 'bg-orange-400' : 'bg-slate-300'
+                        }`}>
+                          {idx + 1}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <div className="font-semibold text-sm">{s.name}</div>
+                            <StarRating value={st.avgRating || null} />
+                          </div>
+                          <div className="mt-1 flex items-center gap-3 text-xs text-muted-foreground">
+                            <span>👥 {st.served || 0} served</span>
+                            <span className="text-emerald-600">✓ {st.deals || 0} deal</span>
+                            <span className="text-rose-600">✗ {st.lost || 0}</span>
+                            <span className="text-blue-600">📞 {st.followup || 0}</span>
+                            <span className="ml-auto font-semibold text-slate-700">
+                              {closeRate}% close
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Radio className="h-5 w-5 text-rose-500 animate-pulse" />
+                Live Activity Feed
+                {autoChat && <Badge variant="secondary" className="bg-emerald-100 text-emerald-700 text-[10px]">LIVE</Badge>}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {data.activity.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-8">Belum ada percakapan.</p>
+              ) : (
+                <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                  {data.activity.map((m) => (
+                    <div key={m.id} className={`p-2 rounded-lg text-xs border-l-4 ${
+                      m.from === 'sales' ? 'border-blue-400 bg-blue-50/50' : 'border-amber-400 bg-amber-50/50'
+                    }`}>
+                      <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                        <span className="font-semibold">
+                          {m.from === 'sales' ? '💼' : (m.customerType === 'premium' ? '👑' : '🙂')} {m.author}
+                          <span className="text-muted-foreground/60"> → {m.from === 'sales' ? m.customerName : 'Sales'}</span>
+                        </span>
+                        <span>{new Date(m.ts).toLocaleTimeString('id-ID', { hour12: false })}</span>
+                      </div>
+                      <div className="mt-0.5 text-slate-700">{m.text}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         <footer className="text-center text-xs text-muted-foreground mt-8 py-4">
           Built with Next.js • In-memory priority queue • Premium first • Auto-gen tiap 10 detik
@@ -389,6 +507,14 @@ const App = () => {
                     {RESULT_META[detailCustomer.result]?.label}
                   </span>
                 } />
+              )}
+              {detailCustomer.rating != null && (
+                <DetailRow label="Rating" value={<StarRating value={detailCustomer.rating} size={16} />} />
+              )}
+              {detailCustomer.feedback && (
+                <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 text-sm italic text-slate-700">
+                  💬 "{detailCustomer.feedback}"
+                </div>
               )}
               <DetailRow label="Waktu Masuk" value={
                 <span className="text-sm text-muted-foreground">
@@ -496,19 +622,42 @@ const App = () => {
   );
 };
 
-const StatCard = ({ icon: Icon, label, value, color, bg }) => (
+const StatCard = ({ icon: Icon, label, value, sub, color, bg }) => (
   <Card className="shadow-sm">
     <CardContent className="p-4 flex items-center gap-3">
       <div className={`h-10 w-10 rounded-xl ${bg} flex items-center justify-center`}>
         <Icon className={`h-5 w-5 ${color}`} />
       </div>
-      <div>
+      <div className="min-w-0">
         <div className="text-xs text-muted-foreground uppercase tracking-wide">{label}</div>
-        <div className="text-2xl font-bold">{value}</div>
+        <div className="text-xl font-bold truncate">{value}</div>
+        {sub && <div className="text-[10px] text-muted-foreground">{sub}</div>}
       </div>
     </CardContent>
   </Card>
 );
+
+const StarRating = ({ value, size = 14 }) => {
+  if (value == null) return <span className="text-xs text-muted-foreground">—</span>;
+  const full = Math.floor(value);
+  const half = value - full >= 0.5;
+  return (
+    <div className="flex items-center gap-0.5">
+      {[1, 2, 3, 4, 5].map((i) => {
+        const filled = i <= full;
+        const isHalf = !filled && i === full + 1 && half;
+        return (
+          <Star
+            key={i}
+            size={size}
+            className={filled ? 'fill-yellow-400 text-yellow-400' : isHalf ? 'fill-yellow-200 text-yellow-400' : 'text-slate-300'}
+          />
+        );
+      })}
+      <span className="ml-1 text-xs font-medium text-muted-foreground">{value}</span>
+    </div>
+  );
+};
 
 const StatusBadge = ({ status }) => {
   const map = {
